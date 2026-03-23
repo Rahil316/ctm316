@@ -41,7 +41,7 @@ let cachedOutput = null;
 // COLOR SYSTEM GENERATOR
 // ============================================================================
 function variableMaker(clrSys) {
-  // OPTIMIZATION: Cache check - return cached result if inputs haven't changed
+  // Return cached result if the inputs haven't changed to avoid recalculating
   const inputHash = JSON.stringify({
     clrGroups: clrSys.clrGroups.map((g) => ({
       ...g,
@@ -61,21 +61,20 @@ function variableMaker(clrSys) {
   const clrRoles = clrSys.roles;
   const clrWeights = seriesMaker(clrSys.weightCount);
 
-  // OPTIMIZATION: Pre-calculate normalized backgrounds
+  // Pre-calculate normalized backgrounds
   const lightBg = normalizeHex(clrSys.lightBg) || "#FFFFFF";
   const darkBg = normalizeHex(clrSys.darkBg) || "#000000";
 
-  // OPTIMIZATION: Pre-allocate objects with known sizes
-  const rawVarObj = Object.create(null); // Faster than {}
+  // Pre-allocate objects with known structures
+  const rawVarObj = Object.create(null);
   const conVarObj = {
     light: Object.create(null),
     dark: Object.create(null),
   };
 
-  // OPTIMIZATION: Use typed arrays for weights for faster access
   const weightCount = clrWeights.length;
 
-  // OPTIMIZATION: Pre-calculate all weight indices
+  // Pre-calculate weight indices over all weights
   const weightIndices = new Array(weightCount);
   for (let i = 0; i < weightCount; i++) weightIndices[i] = i;
 
@@ -83,31 +82,31 @@ function variableMaker(clrSys) {
 
   // RAW COLORS GENERATION
   // ============================================================================
-  // OPTIMIZATION: Process groups in a single pass where possible
   for (let gIdx = 0; gIdx < clrGroups.length; gIdx++) {
     const group = clrGroups[gIdx];
     const groupName = group.name;
     const seed = normalizeHex(group.value) || "#000000";
 
-    // OPTIMIZATION: Batch color generation
+    // Batch generate colors to cover all defined weights
     const colorVars = colorCalSplit(seed, clrWeights);
-    colorVars.reverse(); // Note: This mutates the array - ensure this is expected
+    colorVars.reverse(); // Values map from lightest to darkest weights
 
     const rawGroupObj = Object.create(null);
     rawVarObj[groupName] = rawGroupObj;
 
-    // OPTIMIZATION: Pre-calculate contrasts for both themes
+    // Evaluate contrasts against both light and dark modes
     for (let wIdx = 0; wIdx < weightCount; wIdx++) {
       const weight = clrWeights[wIdx];
       const value = normalizeHex(colorVars[wIdx]) || seed;
 
-      // OPTIMIZATION: Calculate both contrasts in one go
+      // Extract ratio values efficiently without redundancy
       const lightContrast = contrastRatio(value, lightBg);
       const darkContrast = contrastRatio(value, darkBg);
 
       rawGroupObj[weight] = {
         value,
         tknName: `${groupName}-${weight}`,
+        shortName: `${group.shortName}-${weight}`,
         contrast: {
           light: {
             ratio: lightContrast,
@@ -122,39 +121,15 @@ function variableMaker(clrSys) {
     }
   }
 
-  // INTERNAL HELPER: can baseIdx satisfy all offsets?
+  // Check if a base index can satisfy all expected scale variations
   // ============================================================================
-  // OPTIMIZATION: Make this a pure function outside the loop closure
   function canUseBaseIndex(groupName, baseIdx, role, themeName) {
     const gap = role.gaps;
-    const minC = parseFloat(role.minContrast);
+    const maxOffset = 2 * gap; // Needs space for weakest (-2*gap) and stronger (+2*gap)
 
-    // OPTIMIZATION: Pre-calculate offsets array
-    const offsets = [
-      -2 * gap, // weakest
-      -gap, // weak
-      0, // base
-      gap, // strong
-      2 * gap, // stronger
-    ];
-
-    const rawGroup = rawVarObj[groupName];
-    const themeContrasts = rawGroup[clrWeights[0]].contrast[themeName];
-
-    // Check all offsets
-    for (const offset of offsets) {
-      const idx = baseIdx + offset;
-
-      // OPTIMIZATION: Early boundary check
-      if (idx < 0 || idx >= weightCount) return false;
-
-      const ratio = rawGroup[clrWeights[idx]].contrast[themeName].ratio;
-
-      // OPTIMIZATION: Use strict inequality with epsilon for floating point
-      if (ratio == null || ratio + 0.001 < minC) return false;
-    }
-
-    return true;
+    // A set can be made reasonably if there is enough space on both ends
+    // to step out the variations without crossing index 0 or weightCount - 1.
+    return baseIdx - maxOffset >= 0 && baseIdx + maxOffset < weightCount;
   }
 
   // CONTEXTUAL TOKENS GENERATION
@@ -164,7 +139,7 @@ function variableMaker(clrSys) {
     { name: "dark", bg: darkBg },
   ];
 
-  // OPTIMIZATION: Process themes in parallel where possible
+  // Process themes to output contextual matching variations
   for (let tIdx = 0; tIdx < themes.length; tIdx++) {
     const theme = themes[tIdx];
     const t = theme.name;
@@ -188,19 +163,35 @@ function variableMaker(clrSys) {
         const conRole = Object.create(null);
         conGroup[roleName] = conRole;
 
-        // FIND USABLE BASE INDEX
+        // Find Usable Base Index
         // ============================================================================
         let baseIdx = -1;
 
-        // OPTIMIZATION: Use binary search for optimal base index
-        // Perfect match search with early exit
-        for (let i = 0; i < weightCount; i++) {
-          const weight = clrWeights[i];
-          const c = rawVarObj[groupName][weight].contrast[t].ratio;
+        // Use conditional traversal for optimal base index
+        // Themes need different search directions to find the MINIMAL passing color:
+        // - Light bg: Start at lightest (0)  -> getting darker until c >= minC
+        // - Dark bg: Start at darkest (22) -> getting lighter until c >= minC
+        const isDarkTheme = t === "dark";
 
-          if (c >= minC && canUseBaseIndex(groupName, i, role, t)) {
-            baseIdx = i;
-            break;
+        if (isDarkTheme) {
+          for (let i = weightCount - 1; i >= 0; i--) {
+            const weight = clrWeights[i];
+            const c = rawVarObj[groupName][weight].contrast[t].ratio;
+
+            if (c >= minC && canUseBaseIndex(groupName, i, role, t)) {
+              baseIdx = i;
+              break;
+            }
+          }
+        } else {
+          for (let i = 0; i < weightCount; i++) {
+            const weight = clrWeights[i];
+            const c = rawVarObj[groupName][weight].contrast[t].ratio;
+
+            if (c >= minC && canUseBaseIndex(groupName, i, role, t)) {
+              baseIdx = i;
+              break;
+            }
           }
         }
 
@@ -214,7 +205,7 @@ function variableMaker(clrSys) {
             const c = rawVarObj[groupName][weight].contrast[t].ratio;
 
             if (c >= minC) {
-              // OPTIMIZATION: Calculate range without Math.min for speed
+              // Calculate range centeredness
               const range = i < weightCount - 1 - i ? i : weightCount - 1 - i;
 
               if (range > bestRange) {
@@ -233,7 +224,7 @@ function variableMaker(clrSys) {
               warning: "Min contrast met only partially; using best fallback.",
             });
           } else {
-            // OPTIMIZATION: Calculate midpoint without Math.floor if even length
+            // Fallback to absolute mathematical midpoint of variants array
             baseIdx = weightCount >> 1; // Integer division by 2
             errors.critical.push({
               color: groupName,
@@ -244,19 +235,19 @@ function variableMaker(clrSys) {
           }
         }
 
-        // CLAMP BASE INDEX TO PREVENT OVERFLOW
+        // Clamp base index to boundaries to prevent array overflow
         // ============================================================================
         const maxOffset = 2 * gap;
-        // OPTIMIZATION: Use bitwise operations for integer math
+        // Determine safe min and max boundaries
         const minAllowed = maxOffset;
         const maxAllowed = weightCount - 1 - maxOffset;
 
         if (baseIdx < minAllowed) baseIdx = minAllowed;
         if (baseIdx > maxAllowed) baseIdx = maxAllowed;
 
-        // GENERATE VARIATIONS
+        // Generate Contextual Variations
         // ============================================================================
-        // OPTIMIZATION: Pre-calculate offsets as array for iteration
+        // Define standard token position offsets
         const offsetValues = [
           { key: "weakest", offset: -2 * gap },
           { key: "weak", offset: -gap },
@@ -288,6 +279,7 @@ function variableMaker(clrSys) {
             contrastRating: data.contrast[t].rating,
             valueRef: data.tknName,
             tknRole: roleName,
+            roleName: role.name, // Display name
             tknClGroup: groupName,
             weight,
             variationOffset: offset,
@@ -312,6 +304,10 @@ function variableMaker(clrSys) {
     raw: rawVarObj,
     ctx: conVarObj,
     errors,
+    backgrounds: {
+      light: normalizeHex(lightBg),
+      dark: normalizeHex(darkBg),
+    },
     metadata: {
       groups: clrGroups.length,
       weights: weightCount,

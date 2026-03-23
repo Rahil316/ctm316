@@ -10,20 +10,109 @@ function getOptimalTextColor(bg) {
 }
 
 // DISPLAY FUNCTIONS
+function filterErrorsByTheme(errors, theme) {
+  if (!errors) return null;
+  const filtered = {
+    critical: errors.critical?.filter((e) => e.theme === theme) || [],
+    warnings: errors.warnings?.filter((e) => e.theme === theme) || [],
+    notices: errors.notices?.filter((e) => e.theme === theme) || [],
+  };
+  if (
+    filtered.critical.length > 0 ||
+    filtered.warnings.length > 0 ||
+    filtered.notices.length > 0
+  ) {
+    return filtered;
+  }
+  return null;
+}
+
 function displayColorTokens(collection) {
   const container = document.getElementById("rawColorsContainer");
 
   container.classList.add("color-system-updating");
   const fragment = document.createDocumentFragment();
 
-  if (collection.errors)
-    fragment.appendChild(createErrorSection(collection.errors));
-  fragment.appendChild(createRawSection(collection.raw));
-  fragment.appendChild(createThemeSection(collection.ctx, "light"));
-  fragment.appendChild(createThemeSection(collection.ctx, "dark"));
+  // Create Panels
+  const rawPanel = document.createElement("div");
+  rawPanel.id = "panel-raw";
+  rawPanel.classList.add("tab-panel");
+  rawPanel.appendChild(createRawSection(collection.raw));
+  const lightPanel = document.createElement("div");
+  lightPanel.id = "panel-light";
+  lightPanel.classList.add("tab-panel");
+  const lightErrors = filterErrorsByTheme(collection.errors, "light");
+  if (lightErrors) lightPanel.appendChild(createErrorSection(lightErrors));
+  lightPanel.appendChild(createThemeSection(collection.ctx, "light"));
+
+  const darkPanel = document.createElement("div");
+  darkPanel.id = "panel-dark";
+  darkPanel.classList.add("tab-panel");
+  const darkErrors = filterErrorsByTheme(collection.errors, "dark");
+  if (darkErrors) darkPanel.appendChild(createErrorSection(darkErrors));
+  darkPanel.appendChild(createThemeSection(collection.ctx, "dark"));
+
+  // Restore Active Tab and toggles Dark Mode Body class
+  const activeTabBtn = document.querySelector(".tab-btn.active");
+  const activeTargetId = activeTabBtn
+    ? activeTabBtn.dataset.target
+    : "panel-raw";
+
+  if (activeTargetId === "panel-raw") rawPanel.classList.add("active");
+  if (activeTargetId === "panel-light") lightPanel.classList.add("active");
+  if (activeTargetId === "panel-dark") {
+    darkPanel.classList.add("active");
+    document.body.classList.add("app-dark-mode");
+  } else {
+    document.body.classList.remove("app-dark-mode");
+  }
+
+  fragment.appendChild(rawPanel);
+  fragment.appendChild(lightPanel);
+  fragment.appendChild(darkPanel);
 
   container.innerHTML = "";
   container.appendChild(fragment);
+
+  // Setup tab click listeners efficiently if not already set
+  if (!window.tabListenersSet) {
+    const tabsContainer = document.querySelector(".tabs-navigation");
+    if (tabsContainer) {
+      tabsContainer.addEventListener("click", (e) => {
+        const btn = e.target.closest(".tab-btn");
+        if (!btn) return;
+
+        // Update buttons
+        document
+          .querySelectorAll(".tab-btn")
+          .forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+
+        // Update panels
+        const targetId = btn.dataset.target;
+        document.querySelectorAll(".tab-panel").forEach((p) => {
+          p.classList.remove("active");
+          p.classList.remove("animate-in");
+        });
+
+        const targetPanel = document.getElementById(targetId);
+        if (targetPanel) {
+          targetPanel.classList.add("active");
+          // Trigger reflow to ensure animation runs when clicking tabs
+          void targetPanel.offsetWidth;
+          targetPanel.classList.add("animate-in");
+        }
+
+        // Toggle UI Dark Mode
+        if (targetId === "panel-dark") {
+          document.body.classList.add("app-dark-mode");
+        } else {
+          document.body.classList.remove("app-dark-mode");
+        }
+      });
+      window.tabListenersSet = true;
+    }
+  }
 
   requestAnimationFrame(() => {
     container.classList.remove("color-system-updating");
@@ -33,10 +122,19 @@ function displayColorTokens(collection) {
 function createErrorSection(errors) {
   const createListHTML = (arr) =>
     arr
-      .map(
-        (e) =>
-          `<div class="error-item">${e.error || e.warning || e.notice}</div>`
-      )
+      .map((e) => {
+        let ctxArray = [];
+        if (e.color)
+          ctxArray.push(`Group: <strong>${e.color.toUpperCase()}</strong>`);
+        if (e.role) ctxArray.push(`Role: <strong>${e.role}</strong>`);
+        if (e.variation) ctxArray.push(`Var: <strong>${e.variation}</strong>`);
+
+        let prefixHTML = ctxArray.length
+          ? `<span style="opacity:0.85; margin-right:8px;">[ ${ctxArray.join(" | ")} ]</span>`
+          : "";
+
+        return `<div class="error-item">${prefixHTML}${e.error || e.warning || e.notice}</div>`;
+      })
       .join("");
 
   const section = document.createElement("div");
@@ -44,7 +142,7 @@ function createErrorSection(errors) {
   section.innerHTML = `
     <div class="errors-header">
       <h4 class="errors-header__title">⚠️ Warnings & Errors</h4>
-      <button class="errors-toggle collapsed">-></button>
+      <button class="errors-toggle collapsed"><</button>
     </div>
     <div class="errors-content custom-scrollbar">
       <div class="error-category">
@@ -92,25 +190,21 @@ function createRawSection(raw) {
           return `
           <div class="color-swatch" style="background-color:${colorValue}; color:${textColor}">
             <div class="swatch-info">
-              <div class="swatch-weight">
-                <span>${weight}</span>
-                <span>${data.tknName}</span>
+              <div class="swatch-hex" data-tooltip="Click to copy hex" data-copy="${colorValue}">
+                ${colorValue}
               </div>
-              <div class="swatch-hex">
-                <span>${colorValue}</span>
-                <span>HSL: ${hexToHsl(colorValue)}</span>
+              <div class="swatch-weight" data-tooltip="Click to copy name" data-copy="${data.tknName}">
+                ${data.tknName} (${data.shortName})
               </div>
-              <div class="swatch-contrast">
-                <span class="contrast-label">Light</span>
-                <span>${(data.contrast.light.ratio || 0).toFixed(2)} - ${
-            data.contrast.light.rating
-          }</span>
-              </div>
-              <div class="swatch-contrast">
-                <span class="contrast-label">Dark</span>
-                <span>${(data.contrast.dark.ratio || 0).toFixed(2)} - ${
-            data.contrast.dark.rating
-          }</span>
+              <div class="contrast-pills-row">
+                <div class="contrast-pill contrast-pill--light">
+                  <span class="pill-icon">☀️</span>
+                  <span class="pill-text">${(data.contrast.light.ratio || 0).toFixed(2)} - ${data.contrast.light.rating}</span>
+                </div>
+                <div class="contrast-pill contrast-pill--dark">
+                  <span class="pill-icon">🌙</span>
+                  <span class="pill-text">${(data.contrast.dark.ratio || 0).toFixed(2)} - ${data.contrast.dark.rating}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -129,10 +223,7 @@ function createRawSection(raw) {
 
   const section = document.createElement("div");
   section.className = "raw-colors-section";
-  section.innerHTML = `
-    <h4 class="raw-colors-section__title">Raw Color Palette</h4>
-    ${rawHTML}
-  `;
+  section.innerHTML = rawHTML;
 
   return section;
 }
@@ -159,36 +250,43 @@ function createThemeSection(con, theme) {
           const variationsHTML = Object.entries(variations)
             .map(([variation, data]) => {
               if (!data?.value) return "";
-              const colorValue = normalizeHex(data.value) || "#000000";
+              const colorValue = normalizeHex(data.value);
               const textColor = getOptimalTextColor(colorValue);
-
               return `
                 <div class="color-token" style="background-color:${colorValue}; color:${textColor}">
-                  <div class="token-info">
-                    <div class="token-variation">${variation}</div>
-                    <div class="token-hex">${colorValue}</div>
-                    <div class="token-ref">Ref: ${data.valueRef}</div>
-                    <div class="token-contrast">
-                      Contrast: ${(data.contrastRatio || 0).toFixed(2)} - ${
-                data.contrastRating
-              }
+                  <div class="swatch-info">
+                    <div class="swatch-hex" data-tooltip="Click to copy hex" data-copy="${colorValue}">
+                      ${colorValue}
+                    </div>
+                    <div class="swatch-weight" data-tooltip="Click to copy name" data-copy="${variation}">
+                      ${variation}
+                    </div>
+                    <div class="token-ref"> Ref: ${data.valueRef}</div>
+                    <div class="contrast-pills-row">
+                      <div class="contrast-pill ${theme === "light" ? "contrast-pill--light" : "contrast-pill--dark"}">
+                        <span class="pill-icon">${theme === "light" ? "☀️" : "🌙"}</span>
+                        <span class="pill-text">${(data.contrastRatio || 0).toFixed(2)} - ${data.contrastRating}</span>
+                      </div>
                     </div>
                     ${
                       data.isAdjusted
-                        ? '<div class="token-adjustment">Adjusted</div>'
+                        ? '<div class="token-adjustment" style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase;">Adjusted</div>'
                         : ""
                     }
-                    <div class="token-theme">${themeName} Theme</div>
                   </div>
                 </div>
               `;
             })
             .join("");
 
+          // Get display name from the first variation
+          const firstVar = Object.values(variations)[0];
+          const displayRoleName = firstVar?.roleName || role;
+
           return variationsHTML
             ? `
               <div class="role-group">
-                <h5 class="role-group-dark__title">${role}</h5>
+                <h5 class="role-group-dark__title">${displayRoleName}</h5>
                 <div class="variations-grid">${variationsHTML}</div>
               </div>
             `
@@ -229,32 +327,31 @@ function createColorInputs(colorScheme, onUpdate) {
 
   // ----- Basic Settings -----
   const basicSection = createSection("Basic Settings");
-  basicSection.className = "color-group-control";
   basicSection.appendChild(
-    createInput("name", "System Name", colorScheme.name)
+    createInput("name", "System Name", colorScheme.name),
   );
   basicSection.appendChild(
     createInput(
       "weightCount",
       "Weight Count",
       colorScheme.weightCount,
-      "number"
-    )
+      "number",
+    ),
   );
   // ----- Background Colors -----
   basicSection.appendChild(
     createColorInput(
       "lightBg",
       "Light Theme Background",
-      colorScheme.lightBg || "FFFFFF"
-    )
+      colorScheme.lightBg || "FFFFFF",
+    ),
   );
   basicSection.appendChild(
     createColorInput(
       "darkBg",
       "Dark Theme Background",
-      colorScheme.darkBg || "000000"
-    )
+      colorScheme.darkBg || "000000",
+    ),
   );
   targetContainer.appendChild(basicSection);
 
@@ -290,7 +387,7 @@ function createColorInputs(colorScheme, onUpdate) {
           updateColorScheme(
             colorScheme,
             path,
-            Number.isFinite(n) ? Math.floor(n) : 0
+            Number.isFinite(n) ? Math.floor(n) : 0,
           );
         }
 
@@ -315,7 +412,7 @@ function createColorInputs(colorScheme, onUpdate) {
         updateColorScheme(
           colorScheme,
           path,
-          Number.isFinite(n) ? Math.floor(n) : 0
+          Number.isFinite(n) ? Math.floor(n) : 0,
         );
       } else {
         updateColorScheme(colorScheme, path, rawVal.replace("#", ""));
@@ -368,12 +465,8 @@ function createColorGroupInput(group, index) {
 
   div.innerHTML = `
     <div class="color-group-header">
-      <h4 class="color-group-header__title">${formattedLabel}</h4>
+      <input type="text" class="header-editable-input" value="${group.name}" data-path="clrGroups.${index}.name" placeholder="Group Name">
       <button class="delete-group-btn" data-index="${index}">×</button>
-    </div>
-    <div class="input-group">
-      <label class="input-group__label">Name</label>
-      <input type="text" class="input-group__control" value="${group.name}" data-path="clrGroups.${index}.name">
     </div>
     <div class="input-group">
       <label class="input-group__label">Short Name</label>
@@ -446,14 +539,40 @@ function setupColorInputSync(container) {
 function createRolesSection(colorScheme) {
   const rolesSection = createSection("Roles Configuration");
 
+  // Create add button
+  const addButton = document.createElement("button");
+  addButton.className = "add-color-group-btn";
+  addButton.textContent = "+ Add Role";
+  addButton.addEventListener("click", () => {
+    const roleId = `role${Object.keys(colorScheme.roles).length + 1}`;
+    colorScheme.roles[roleId] = {
+      name: "New Role",
+      shortName: "nr",
+      minContrast: "4.5",
+      gaps: 2,
+    };
+    // Recreate the entire controls section
+    createColorInputs(colorScheme, (updated) => {
+      window.currentEditableScheme = updated; // Update global
+      const output = variableMaker(updated);
+      displayColorTokens(output);
+    });
+  });
+  rolesSection.appendChild(addButton);
+
   for (const [roleKey, role] of Object.entries(colorScheme.roles)) {
     const roleDiv = document.createElement("div");
     const roleInputs = document.createElement("div");
 
-    roleInputs.className = "role-inputs-group";
-    roleDiv.className = "role-control-group";
+    roleInputs.className = "color-group-control";
+    roleDiv.classList.add("role-control-group");
 
-    roleDiv.innerHTML = `<h4 class="role-control-group__title">${role.name}</h4>`;
+    roleDiv.innerHTML = `
+      <div class="role-control-header">
+        <input type="text" class="header-editable-input" value="${role.name}" data-path="roles.${roleKey}.name" placeholder="Role Name">
+        <button class="delete-group-btn" data-role="${roleKey}">×</button>
+      </div>
+    `;
 
     // Min contrast input
     roleInputs.appendChild(
@@ -461,21 +580,41 @@ function createRolesSection(colorScheme) {
         `roles.${roleKey}.minContrast`,
         "Min Contrast",
         role.minContrast,
-        "number"
-      )
+        "number",
+      ),
     );
 
     // Gaps input
     roleInputs.appendChild(
-      createInput(`roles.${roleKey}.gaps`, "Gaps", role.gaps, "number")
+      createInput(`roles.${roleKey}.gaps`, "Gaps", role.gaps, "number"),
     );
 
     // Short name input
     roleInputs.appendChild(
-      createInput(`roles.${roleKey}.shortName`, "Short Name", role.shortName)
+      createInput(`roles.${roleKey}.shortName`, "Short Name", role.shortName),
     );
 
     roleDiv.appendChild(roleInputs);
+
+    // Add delete button handler
+    const deleteBtn = roleDiv.querySelector(".delete-group-btn");
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const rKey = e.target.dataset.role;
+
+        // Remove the role from the color scheme
+        delete colorScheme.roles[rKey];
+
+        // Recreate the entire controls section
+        createColorInputs(colorScheme, (updated) => {
+          window.currentEditableScheme = updated; // Update global
+          const output = variableMaker(updated);
+          displayColorTokens(output);
+        });
+      });
+    }
+
     rolesSection.appendChild(roleDiv);
   }
 
@@ -485,7 +624,41 @@ function createRolesSection(colorScheme) {
 function createSection(title) {
   const section = document.createElement("div");
   section.className = "control-section";
-  section.innerHTML = `<h4 class="control-section__title">${title}</h4>`;
+
+  const header = document.createElement("div");
+  header.className = "control-section__header";
+  header.innerHTML = `
+    <h4 class="control-section__title">${title}</h4>
+    <button class="section-toggle-btn">▼</button>
+  `;
+
+  const content = document.createElement("div");
+  content.className = "control-section__content";
+
+  const inner = document.createElement("div");
+  inner.className = "color-group-control";
+  content.appendChild(inner);
+
+  const toggleBtn = header.querySelector(".section-toggle-btn");
+  header.addEventListener("click", () => {
+    content.classList.toggle("hidden");
+    toggleBtn.style.transform = content.classList.contains("hidden")
+      ? "rotate(-90deg)"
+      : "rotate(0deg)";
+  });
+
+  section.appendChild(header);
+  section.appendChild(content);
+
+  // Hook appendChild to natively proxy children deep into the inner content shell safely
+  const originalAppendChild = section.appendChild.bind(section);
+  section.appendChild = function (node) {
+    if (this.contains(content) && node !== header && node !== content) {
+      return inner.appendChild(node);
+    }
+    return originalAppendChild(node);
+  };
+
   return section;
 }
 
@@ -498,6 +671,40 @@ function createInput(path, label, value, type = "text") {
   `;
   return div;
 }
+
+// Set up global UI interactions
+document.addEventListener("DOMContentLoaded", () => {
+  const toggleSidebarBtn = document.getElementById("toggleSidebarBtn");
+  const appContainer = document.querySelector("app");
+  if (toggleSidebarBtn && appContainer) {
+    toggleSidebarBtn.addEventListener("click", () => {
+      appContainer.classList.toggle("sidebar-hidden");
+    });
+  }
+
+  // Global Click-to-Copy mechanism
+  document.addEventListener("click", async (e) => {
+    const copyTarget = e.target.closest("[data-copy]");
+    if (!copyTarget) return;
+
+    const value = copyTarget.getAttribute("data-copy");
+    try {
+      await navigator.clipboard.writeText(value);
+
+      // Temporary tooltip feedback
+      const originalTooltip = copyTarget.getAttribute("data-tooltip");
+      copyTarget.setAttribute("data-tooltip", "Copied!");
+      copyTarget.classList.add("copy-success");
+
+      setTimeout(() => {
+        copyTarget.setAttribute("data-tooltip", originalTooltip);
+        copyTarget.classList.remove("copy-success");
+      }, 1500);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  });
+});
 
 function updateColorScheme(colorScheme, path, value) {
   // Handle backgrounds (strip #)
@@ -662,31 +869,7 @@ function initializeColorControls() {
     if (e.target.id === "downloadCsv") {
       // Use current editable scheme for CSV export
       const currentScheme = window.currentEditableScheme || editable;
-      const updated = variableMaker(currentScheme);
-
-      console.log("CSV export - variableMaker output structure:", updated);
-
-      // Handle the structure properly for flattenTokensForCsv
-      let dataForCsv = updated;
-
-      // Check if we need to adjust the structure
-      // flattenTokensForCsv expects an object with .con property containing light/dark themes
-      if (updated && !updated.con) {
-        // If no .con property, check for other possible structures
-        if (updated.ctx) {
-          // If it has .ctx, that might be what we need
-          if (updated.ctx.light && updated.ctx.dark) {
-            // Wrap .ctx in a .con property
-            dataForCsv = { con: updated.ctx };
-          } else if (updated.ctx.con) {
-            // If .ctx has .con, use that
-            dataForCsv = updated.ctx;
-          }
-        } else if (updated.light && updated.dark) {
-          // If light/dark are at root level, wrap them
-          dataForCsv = { con: { light: updated.light, dark: updated.dark } };
-        }
-      }
+      const dataForCsv = variableMaker(currentScheme);
 
       console.log("Data being passed to flattenTokensForCsv:", dataForCsv);
 
@@ -696,7 +879,7 @@ function initializeColorControls() {
       if (flat.length === 0) {
         console.warn("No data found for CSV export");
         alert(
-          "No color token data found to export. Please check if the color system is properly configured."
+          "No color token data found to export. Please check if the color system is properly configured.",
         );
         return;
       }

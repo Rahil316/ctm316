@@ -6,7 +6,7 @@ function flattenToCss(collection) {
   // Raw colors (common to both themes) - include leading '#'
   Object.entries(raw).forEach(([group, weights]) => {
     Object.entries(weights).forEach(([weight, data]) => {
-      const varName = `--${group}-${weight}`;
+      const varName = `--${slugify(group)}-${slugify(weight)}`;
       const value = normalizeHex(data.value) || "#000000";
       cssVars.light[varName] = value;
       cssVars.dark[varName] = value;
@@ -18,11 +18,14 @@ function flattenToCss(collection) {
     Object.entries(themeData).forEach(([group, roles]) => {
       Object.entries(roles).forEach(([role, variations]) => {
         Object.entries(variations).forEach(([variation, data]) => {
-          const refParts = (data.valueRef || "").split("-");
-          const refGroup = refParts[0];
-          const refWeight = refParts[1];
+          const ref = data.valueRef || "";
+          const lastDash = ref.lastIndexOf("-");
+          const refGroup = slugify(ref.substring(0, lastDash));
+          const refWeight = slugify(ref.substring(lastDash + 1));
           const rawVarName = `--${refGroup}-${refWeight}`;
-          cssVars[theme][`--${group}-${role}-${variation}`] = `var(${rawVarName})`;
+          cssVars[theme][
+            `--${slugify(group)}-${slugify(role)}-${slugify(variation)}`
+          ] = `var(${rawVarName})`;
         });
       });
     });
@@ -60,69 +63,24 @@ function generateCss(cssVars) {
   return css;
 }
 
-// FIXED: Gets current scheme from global variable
-// FINAL FIXED VERSION - handles different possible structures
+// Handle different possible structures passed from the core data generator
 function downloadCss() {
   try {
     // Get the current scheme
     const currentScheme = window.currentEditableScheme || colorScheme;
     console.log("Using scheme:", currentScheme.name);
 
-    // Get the collection
+    // Get the collection from the generator
     const collection = variableMaker(currentScheme);
-    console.log("Collection from variableMaker:", collection);
 
-    // The issue: variableMaker might return different structure than expected
-    // Let's check what we actually have
-    let raw, con, backgrounds;
+    // Structure is now unified thanks to variableMaker update
+    const { raw, ctx: con, backgrounds } = collection;
 
-    // Case 1: The collection has raw, con, backgrounds at top level (what flattenToCss expects)
-    if (collection.raw && collection.con && collection.backgrounds) {
-      console.log("Structure 1: raw/con/backgrounds at top level");
-      raw = collection.raw;
-      con = collection.con;
-      backgrounds = collection.backgrounds;
-    }
-    // Case 2: The collection has ctx property with everything
-    else if (collection.ctx) {
-      console.log("Structure 2: Using ctx property");
-      // Check if ctx has raw, con, backgrounds
-      if (collection.ctx.raw && collection.ctx.con && collection.ctx.backgrounds) {
-        raw = collection.ctx.raw;
-        con = collection.ctx.con;
-        backgrounds = collection.ctx.backgrounds;
-      }
-      // Or maybe ctx itself is the con object
-      else if (collection.raw && collection.ctx.light && collection.ctx.dark) {
-        console.log("Structure 3: raw at top, ctx has light/dark themes");
-        raw = collection.raw;
-        con = collection.ctx;
-        backgrounds = { light: currentScheme.lightBg, dark: currentScheme.darkBg };
-      }
-    }
-    // Case 3: Maybe raw is at top level and ctx contains the themes
-    else if (collection.raw && collection.ctx) {
-      console.log("Structure 4: raw at top, ctx available");
-      raw = collection.raw;
-      con = collection.ctx;
-      backgrounds = { light: currentScheme.lightBg || "FFFFFF", dark: currentScheme.darkBg || "000000" };
-    }
-
-    // If we couldn't extract the data, throw an error
-    if (!raw || !con) {
-      console.error("Could not extract required data from collection:", collection);
-      throw new Error("Invalid collection structure from variableMaker");
-    }
-
-    // Ensure backgrounds exists
-    if (!backgrounds) {
-      backgrounds = {
-        light: currentScheme.lightBg || "FFFFFF",
-        dark: currentScheme.darkBg || "000000",
-      };
-    }
-
-    console.log("Extracted data:", { rawKeys: Object.keys(raw), conKeys: Object.keys(con), backgrounds });
+    console.log("Extracted data:", {
+      rawKeys: Object.keys(raw),
+      conKeys: Object.keys(con),
+      backgrounds,
+    });
 
     // Create a properly structured collection for flattenToCss
     const fixedCollection = { raw, con, backgrounds };
@@ -143,7 +101,9 @@ function downloadCss() {
 
 //Generate CSV file
 function generateCSV({ data, columns }) {
-  const rows = Array.isArray(data) ? data : Object.entries(data).map(([key, value]) => ({ key, ...value }));
+  const rows = Array.isArray(data)
+    ? data
+    : Object.entries(data).map(([key, value]) => ({ key, ...value }));
 
   const header = columns.map((col) => col.label);
 
@@ -160,7 +120,9 @@ function generateCSV({ data, columns }) {
 }
 
 function getValueByPath(obj, path) {
-  return path.split(".").reduce((acc, key) => (acc ? acc[key] : undefined), obj);
+  return path
+    .split(".")
+    .reduce((acc, key) => (acc ? acc[key] : undefined), obj);
 }
 
 function escapeCSV(value) {
@@ -224,7 +186,7 @@ function flattenTokensForCsv(out) {
           result.push({
             theme,
             group,
-            role,
+            role: item.roleName || role, // Use display name if available
             variation,
             weight: item.weight || "",
             value: item.value || "",
