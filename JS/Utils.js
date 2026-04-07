@@ -24,8 +24,7 @@ function hexToRgb(hex) {
 }
 
 function rgbToHsl(r, g, b) {
-  if ([r, g, b].some((v) => typeof v !== "number" || v < 0 || v > 255))
-    return null;
+  if ([r, g, b].some((v) => typeof v !== "number" || v < 0 || v > 255)) return null;
   r /= 255;
   g /= 255;
   b /= 255;
@@ -77,18 +76,7 @@ function hexToLum(hex) {
 }
 
 function hslToRgb(h, s, l) {
-  if (
-    typeof h !== "number" ||
-    typeof s !== "number" ||
-    typeof l !== "number" ||
-    h < 0 ||
-    h > 360 ||
-    s < 0 ||
-    s > 100 ||
-    l < 0 ||
-    l > 100
-  )
-    return null;
+  if (typeof h !== "number" || typeof s !== "number" || typeof l !== "number" || h < 0 || h > 360 || s < 0 || s > 100 || l < 0 || l > 100) return null;
   s /= 100;
   l /= 100;
   const c = (1 - Math.abs(2 * l - 1)) * s;
@@ -103,20 +91,12 @@ function hslToRgb(h, s, l) {
   else if (h < 240) [r, g, b] = [0, x, c];
   else if (h < 300) [r, g, b] = [x, 0, c];
   else [r, g, b] = [c, 0, x];
-  return [
-    Math.round((r + m) * 255),
-    Math.round((g + m) * 255),
-    Math.round((b + m) * 255),
-  ];
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
 }
 
 function rgbToHex(r, g, b) {
-  if ([r, g, b].some((v) => typeof v !== "number" || v < 0 || v > 255))
-    return null;
-  const hex = ((1 << 24) + (r << 16) + (g << 8) + b)
-    .toString(16)
-    .slice(1)
-    .toUpperCase();
+  if ([r, g, b].some((v) => typeof v !== "number" || v < 0 || v > 255)) return null;
+  const hex = ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
   return "#" + hex;
 }
 
@@ -164,49 +144,87 @@ function seriesMaker(x) {
   return out;
 }
 
-function colorCalSplit(hexIn, weights) {
-  const hsl = hexToHsl(hexIn);
-  if (!hsl) return [];
-  const [hue, satu, lumn] = hsl;
-  const len = weights.length;
-  const midPoint = Math.ceil(len / 2);
-  const leftCount = midPoint - 1;
-  const rightCount = len - midPoint;
+// function colorCalSplit(hexIn, weights) {
+//   const hsl = hexToHsl(hexIn);
+//   if (!hsl) return [];
+//   const [hue, satu, lumn] = hsl;
+//   const len = weights.length;
+//   const midPoint = Math.ceil(len / 2);
+//   const leftCount = midPoint - 1;
+//   const rightCount = len - midPoint;
 
-  // avoid divide by zero
-  const darkGap = leftCount > 0 ? lumn / (leftCount + 1) : lumn;
-  const lightGap =
-    rightCount > 0 ? (100 - lumn) / (rightCount + 1) : 100 - lumn;
+//   // avoid divide by zero
+//   const darkGap = leftCount > 0 ? lumn / (leftCount + 1) : lumn;
+//   const lightGap = rightCount > 0 ? (100 - lumn) / (rightCount + 1) : 100 - lumn;
 
-  const lumSeq = [];
-  // generate darker steps
-  for (let i = leftCount; i >= 1; i--) {
-    lumSeq.push(Math.max(0, lumn - i * darkGap));
-  }
-  // center
-  lumSeq.push(lumn);
-  // lighter steps
-  for (let i = 1; i <= rightCount; i++) {
-    lumSeq.push(Math.min(100, lumn + i * lightGap));
-  }
+//   const lumSeq = [];
+//   // generate darker steps
+//   for (let i = leftCount; i >= 1; i--) {
+//     lumSeq.push(Math.max(0, lumn - i * darkGap));
+//   }
+//   // center
+//   lumSeq.push(lumn);
+//   // lighter steps
+//   for (let i = 1; i <= rightCount; i++) {
+//     lumSeq.push(Math.min(100, lumn + i * lightGap));
+//   }
 
-  // map to hex and ensure resulting length == len
-  const output = lumSeq
-    .slice(0, len)
-    .map((L) => hslToHex(hue, satu, Math.round(L)));
-  // ensure values are normalized (hslToHex already returns #RRGGBB or null)
-  return output.map((v) => v || "#000000");
-}
+//   // map to hex and ensure resulting length == len
+//   const output = lumSeq.slice(0, len).map((L) => hslToHex(hue, satu, Math.round(L)));
+//   // ensure values are normalized (hslToHex already returns #RRGGBB or null)
+//   return output.map((v) => v || "#000000");
+// }
 
-function colorCalEven(hexIn, weights) {
+function colorStepsMaker(hexIn, weights) {
   const hue = hexToHue(hexIn);
   const satu = hexToSat(hexIn);
   const len = weights.length;
-  const lumSeq = [];
+
+  // To match the contrast calculator (CR = (Y1 + 0.05)/(Y2 + 0.05)),
+  // we must linearly space the logarithmic values of (Y + 0.05).
+  // This guarantees an identical contrast ratio between every adjacent shade!
+  const minL = 0; // Absolute black
+  const maxL = 1; // Absolute white
+  const minV = Math.log(minL + 0.05);
+  const maxV = Math.log(maxL + 0.05);
+  const step = (maxV - minV) / (len + 1);
+
+  const output = [];
+
   for (let i = 1; i <= len; i++) {
-    lumSeq.push(Math.round(100 - (100 / (len + 1)) * i));
+    // Calculate the target perceived luminance mathematically using the contrast scale
+    const targetV = minV + step * i;
+    const targetLum = Math.exp(targetV) - 0.05;
+
+    // Binary search for the L value that achieves the target luminance for our specific hue and saturation
+    let low = 0;
+    let high = 100;
+    let closestL = 50;
+
+    for (let j = 0; j < 30; j++) {
+      let mid = (low + high) / 2;
+      let midHex = hslToHex(hue, satu, mid);
+      let midLum = relLum(midHex);
+
+      closestL = mid;
+
+      // Stop early if target luminance matches
+      if (Math.abs(midLum - targetLum) < 0.0001) {
+        break;
+      }
+
+      if (midLum < targetLum) {
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+
+    // Map optimal L back to precise color hex
+    output.push(hslToHex(hue, satu, closestL) || "#000000");
   }
-  return lumSeq.map((L) => hslToHex(hue, satu, L) || "#000000");
+
+  return output;
 }
 
 function slugify(str) {

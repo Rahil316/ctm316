@@ -57,8 +57,7 @@ body.app-dark-mode {
 
 `;
 
-const overrideMarker =
-  "/* ============================================================================\n   App Dark Mode Theme";
+const overrideMarker = "/* ============================================================================\n   App Dark Mode Theme";
 const overrideIndex = css.indexOf(overrideMarker);
 if (overrideIndex !== -1) {
   css = css.substring(0, overrideIndex).trim();

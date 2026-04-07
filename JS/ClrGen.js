@@ -33,7 +33,6 @@ const colorScheme = {
 
 // CACHE FOR FREQUENT CALLS
 // ============================================================================
-// Since variableMaker() is called frequently (up to 5x/sec), we should cache results
 const colorCache = new Map();
 let lastInputHash = null;
 let cachedOutput = null;
@@ -81,14 +80,14 @@ function variableMaker(clrSys) {
   const errors = { critical: [], warnings: [], notices: [] };
 
   // RAW COLORS GENERATION
-  // ============================================================================
+  // ========================================================================================================================================================
   for (let gIdx = 0; gIdx < clrGroups.length; gIdx++) {
     const group = clrGroups[gIdx];
     const groupName = group.name;
     const seed = normalizeHex(group.value) || "#000000";
 
     // Batch generate colors to cover all defined weights
-    const colorVars = colorCalSplit(seed, clrWeights);
+    const colorVars = colorStepsMaker(seed, clrWeights);
     colorVars.reverse(); // Values map from lightest to darkest weights
 
     const rawGroupObj = Object.create(null);
@@ -122,7 +121,6 @@ function variableMaker(clrSys) {
   }
 
   // Check if a base index can satisfy all expected scale variations
-  // ============================================================================
   function canUseBaseIndex(groupName, baseIdx, role, themeName) {
     const gap = role.gaps;
     const maxOffset = 2 * gap; // Needs space for weakest (-2*gap) and stronger (+2*gap)
@@ -133,52 +131,51 @@ function variableMaker(clrSys) {
   }
 
   // CONTEXTUAL TOKENS GENERATION
-  // ============================================================================
+  // ========================================================================================================================================================
   const themes = [
     { name: "light", bg: lightBg },
     { name: "dark", bg: darkBg },
   ];
 
   // Process themes to output contextual matching variations
-  for (let tIdx = 0; tIdx < themes.length; tIdx++) {
-    const theme = themes[tIdx];
-    const t = theme.name;
-    const conTheme = conVarObj[t];
+  for (const theme of themes) {
+    const themeName = theme.name;
+    const conTheme = conVarObj[themeName];
 
-    for (let gIdx = 0; gIdx < clrGroups.length; gIdx++) {
-      const group = clrGroups[gIdx];
-      const groupName = group.name;
+    for (const clr of clrGroups) {
+      const clrName = clr.name;
       const conGroup = Object.create(null);
-      conTheme[groupName] = conGroup;
-
-      // Get role names once
+      conTheme[clrName] = conGroup;
       const roleNames = Object.keys(clrRoles);
 
-      for (let rIdx = 0; rIdx < roleNames.length; rIdx++) {
-        const roleName = roleNames[rIdx];
+      for (const roleName of roleNames) {
         const role = clrRoles[roleName];
         const gap = role.gaps;
         const minC = parseFloat(role.minContrast);
-
         const conRole = Object.create(null);
         conGroup[roleName] = conRole;
 
         // Find Usable Base Index
-        // ============================================================================
         let baseIdx = -1;
 
-        // Use conditional traversal for optimal base index
-        // Themes need different search directions to find the MINIMAL passing color:
-        // - Light bg: Start at lightest (0)  -> getting darker until c >= minC
-        // - Dark bg: Start at darkest (22) -> getting lighter until c >= minC
-        const isDarkTheme = t === "dark";
+        // Use contextual contrast to determine direction of "stronger" (higher contrast)
+        const highestWeight = clrWeights[weightCount - 1];
+        const lowestWeight = clrWeights[0];
+        const cEnd = rawVarObj[clrName][highestWeight].contrast[themeName].ratio;
+        const cStart = rawVarObj[clrName][lowestWeight].contrast[themeName].ratio;
+
+        // If the darkest color (end) has more contrast, positive index adds contrast.
+        // If the lightest color (start) has more contrast, positive index removes contrast.
+        const contrastGrowthDir = cEnd > cStart ? 1 : -1;
+
+        const isDarkTheme = themeName === "dark";
 
         if (isDarkTheme) {
           for (let i = weightCount - 1; i >= 0; i--) {
             const weight = clrWeights[i];
-            const c = rawVarObj[groupName][weight].contrast[t].ratio;
+            const c = rawVarObj[clrName][weight].contrast[themeName].ratio;
 
-            if (c >= minC && canUseBaseIndex(groupName, i, role, t)) {
+            if (c >= minC) {
               baseIdx = i;
               break;
             }
@@ -186,51 +183,46 @@ function variableMaker(clrSys) {
         } else {
           for (let i = 0; i < weightCount; i++) {
             const weight = clrWeights[i];
-            const c = rawVarObj[groupName][weight].contrast[t].ratio;
+            const c = rawVarObj[clrName][weight].contrast[themeName].ratio;
 
-            if (c >= minC && canUseBaseIndex(groupName, i, role, t)) {
+            if (c >= minC) {
               baseIdx = i;
               break;
             }
           }
         }
 
-        // FALLBACK: Find best available index
+        // FALLBACK: If bounds constraints or general availability prevented a match
         if (baseIdx === -1) {
           let bestIdx = -1;
-          let bestRange = -1;
+          let maxContrast = -1;
 
+          // Find the color that has MAXIMUM possible contrast
           for (let i = 0; i < weightCount; i++) {
             const weight = clrWeights[i];
-            const c = rawVarObj[groupName][weight].contrast[t].ratio;
+            const c = rawVarObj[clrName][weight].contrast[themeName].ratio;
 
-            if (c >= minC) {
-              // Calculate range centeredness
-              const range = i < weightCount - 1 - i ? i : weightCount - 1 - i;
-
-              if (range > bestRange) {
-                bestIdx = i;
-                bestRange = range;
-              }
+            if (c > maxContrast) {
+              bestIdx = i;
+              maxContrast = c;
             }
           }
 
           if (bestIdx !== -1) {
             baseIdx = bestIdx;
-            errors.warnings.push({
-              color: groupName,
+            errors.critical.push({
+              color: clrName,
               role: roleName,
-              theme: t,
-              warning: "Min contrast met only partially; using best fallback.",
+              theme: themeName,
+              error: `Cannot meet minimum contrast ${minC}. using closest available (${maxContrast.toFixed(2)}).`,
             });
           } else {
-            // Fallback to absolute mathematical midpoint of variants array
             baseIdx = weightCount >> 1; // Integer division by 2
             errors.critical.push({
-              color: groupName,
+              color: clrName,
               role: roleName,
-              theme: t,
-              error: "Cannot meet minimum contrast for any weight.",
+              theme: themeName,
+              error: "Cannot evaluate contrast for any weight.",
             });
           }
         }
@@ -257,8 +249,10 @@ function variableMaker(clrSys) {
         ];
 
         for (let vIdx = 0; vIdx < offsetValues.length; vIdx++) {
-          const { key: variation, offset } = offsetValues[vIdx];
-          let idx = baseIdx + offset;
+          const { key: variation, offset: pureOffset } = offsetValues[vIdx];
+
+          // Ensure stronger ALWAYS means higher contrast relative to background!
+          let idx = baseIdx + pureOffset * contrastGrowthDir;
           let adjusted = false;
 
           // Clamp to valid range
@@ -271,27 +265,27 @@ function variableMaker(clrSys) {
           }
 
           const weight = clrWeights[idx];
-          const data = rawVarObj[groupName][weight];
+          const data = rawVarObj[clrName][weight];
 
           conRole[variation] = {
             value: data.value,
-            contrastRatio: data.contrast[t].ratio,
-            contrastRating: data.contrast[t].rating,
+            contrastRatio: data.contrast[themeName].ratio,
+            contrastRating: data.contrast[themeName].rating,
             valueRef: data.tknName,
             tknRole: roleName,
             roleName: role.name, // Display name
-            tknClGroup: groupName,
+            tknClGroup: clrName,
             weight,
-            variationOffset: offset,
+            variationOffset: pureOffset,
             isAdjusted: adjusted,
           };
 
           if (adjusted) {
             errors.warnings.push({
-              color: groupName,
+              color: clrName,
               role: roleName,
               variation,
-              theme: t,
+              theme: themeName,
               warning: `Variation '${variation}' clamped due to overflow`,
             });
           }
@@ -299,7 +293,7 @@ function variableMaker(clrSys) {
       }
     }
   }
-
+  // Preparing Output
   const output = {
     raw: rawVarObj,
     ctx: conVarObj,
@@ -320,50 +314,46 @@ function variableMaker(clrSys) {
   lastInputHash = inputHash;
   cachedOutput = output;
   // For debugging: Log primary fill base colors
-  console.table(output.raw.primary);
+  console.log(output);
 
   return output;
 }
+// function ADDITIONAL_OPTIMIZATIONS(params) {
+//   // ADDITIONAL OPTIMIZATIONS
+//   // ============================================================================
 
-// ADDITIONAL OPTIMIZATIONS
-// ============================================================================
+//   // 1. LAZY EVALUATION: Only generate what's needed
+//   function getContextualToken(clrSys, theme, groupName, roleName, variation) {
+//     // Could implement a more targeted generation if only specific tokens are needed
+//   }
 
-// 1. LAZY EVALUATION: Only generate what's needed
-function getContextualToken(clrSys, theme, groupName, roleName, variation) {
-  // Could implement a more targeted generation if only specific tokens are needed
-}
+//   // 2. INCREMENTAL UPDATES: Update only changed parts
+//   function updateColorSchemeProperty(clrSys, propertyPath, newValue) {
+//     // Clear cache if relevant property changed
+//     if (propertyPath.startsWith("clrGroups") || propertyPath === "weightCount" || propertyPath === "lightBg" || propertyPath === "darkBg") {
+//       lastInputHash = null;
+//     }
+//     // Update scheme...
+//   }
 
-// 2. INCREMENTAL UPDATES: Update only changed parts
-function updateColorSchemeProperty(clrSys, propertyPath, newValue) {
-  // Clear cache if relevant property changed
-  if (
-    propertyPath.startsWith("clrGroups") ||
-    propertyPath === "weightCount" ||
-    propertyPath === "lightBg" ||
-    propertyPath === "darkBg"
-  ) {
-    lastInputHash = null;
-  }
-  // Update scheme...
-}
+//   // 3. WORKER SUPPORT: For very heavy computations
+//   if (typeof window !== "undefined" && window.Worker) {
+//     const colorWorker = new Worker("color-worker.js");
+//     // Could offload heavy computations to web worker
+//   }
 
-// 3. WORKER SUPPORT: For very heavy computations
-if (typeof window !== "undefined" && window.Worker) {
-  const colorWorker = new Worker("color-worker.js");
-  // Could offload heavy computations to web worker
-}
+//   // 4. VALIDATION LAYER: Add schema validation
+//   const colorSchemeSchema = {
+//     // Define expected structure for validation
+//   };
 
-// 4. VALIDATION LAYER: Add schema validation
-const colorSchemeSchema = {
-  // Define expected structure for validation
-};
+//   function validateColorScheme(scheme) {
+//     // Validate before processing
+//     return true; // or validation result
+//   }
 
-function validateColorScheme(scheme) {
-  // Validate before processing
-  return true; // or validation result
-}
-
-// 5. BATCH PROCESSING: For multiple operations
-function batchVariableMaker(schemes) {
-  // Process multiple schemes at once if needed
-}
+//   // 5. BATCH PROCESSING: For multiple operations
+//   function batchVariableMaker(schemes) {
+//     // Process multiple schemes at once if needed
+//   }
+// }
