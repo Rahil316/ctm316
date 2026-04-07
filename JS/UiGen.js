@@ -4,9 +4,7 @@ window.currentEditableScheme = null;
 // UTILITY FUNCTIONS
 function getOptimalTextColor(bg) {
   const b = normalizeHex(bg) || "#000000";
-  return contrastRatio(b, "#000000") > contrastRatio(b, "#FFFFFF")
-    ? "black"
-    : "white";
+  return contrastRatio(b, "#000000") > contrastRatio(b, "#FFFFFF") ? "black" : "white";
 }
 
 // DISPLAY FUNCTIONS
@@ -17,11 +15,7 @@ function filterErrorsByTheme(errors, theme) {
     warnings: errors.warnings?.filter((e) => e.theme === theme) || [],
     notices: errors.notices?.filter((e) => e.theme === theme) || [],
   };
-  if (
-    filtered.critical.length > 0 ||
-    filtered.warnings.length > 0 ||
-    filtered.notices.length > 0
-  ) {
+  if (filtered.critical.length > 0 || filtered.warnings.length > 0 || filtered.notices.length > 0) {
     return filtered;
   }
   return null;
@@ -54,9 +48,7 @@ function displayColorTokens(collection) {
 
   // Restore Active Tab and toggles Dark Mode Body class
   const activeTabBtn = document.querySelector(".tab-btn.active");
-  const activeTargetId = activeTabBtn
-    ? activeTabBtn.dataset.target
-    : "panel-raw";
+  const activeTargetId = activeTabBtn ? activeTabBtn.dataset.target : "panel-raw";
 
   if (activeTargetId === "panel-raw") rawPanel.classList.add("active");
   if (activeTargetId === "panel-light") lightPanel.classList.add("active");
@@ -83,9 +75,7 @@ function displayColorTokens(collection) {
         if (!btn) return;
 
         // Update buttons
-        document
-          .querySelectorAll(".tab-btn")
-          .forEach((b) => b.classList.remove("active"));
+        document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
 
         // Update panels
@@ -124,14 +114,11 @@ function createErrorSection(errors) {
     arr
       .map((e) => {
         let ctxArray = [];
-        if (e.color)
-          ctxArray.push(`Group: <strong>${e.color.toUpperCase()}</strong>`);
+        if (e.color) ctxArray.push(`Group: <strong>${e.color.toUpperCase()}</strong>`);
         if (e.role) ctxArray.push(`Role: <strong>${e.role}</strong>`);
         if (e.variation) ctxArray.push(`Var: <strong>${e.variation}</strong>`);
 
-        let prefixHTML = ctxArray.length
-          ? `<span style="opacity:0.85; margin-right:8px;">[ ${ctxArray.join(" | ")} ]</span>`
-          : "";
+        let prefixHTML = ctxArray.length ? `<span style="opacity:0.85; margin-right:8px;">[ ${ctxArray.join(" | ")} ]</span>` : "";
 
         return `<div class="error-item">${prefixHTML}${e.error || e.warning || e.notice}</div>`;
       })
@@ -146,21 +133,15 @@ function createErrorSection(errors) {
     </div>
     <div class="errors-content custom-scrollbar">
       <div class="error-category">
-        <div class="error-category__title">Critical (${
-          errors.critical?.length || 0
-        })</div>
+        <div class="error-category__title">Critical (${errors.critical?.length || 0})</div>
         ${createListHTML(errors.critical || [])}
       </div>
       <div class="error-category">
-        <div class="error-category__title">Warnings (${
-          errors.warnings?.length || 0
-        })</div>
+        <div class="error-category__title">Warnings (${errors.warnings?.length || 0})</div>
         ${createListHTML(errors.warnings || [])}
       </div>
       <div class="error-category">
-        <div class="error-category__title">Notices (${
-          errors.notices?.length || 0
-        })</div>
+        <div class="error-category__title">Notices (${errors.notices?.length || 0})</div>
         ${createListHTML(errors.notices || [])}
       </div>
     </div>
@@ -268,11 +249,7 @@ function createThemeSection(con, theme) {
                         <span class="pill-text">${(data.contrastRatio || 0).toFixed(2)} - ${data.contrastRating}</span>
                       </div>
                     </div>
-                    ${
-                      data.isAdjusted
-                        ? '<div class="token-adjustment" style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase;">Adjusted</div>'
-                        : ""
-                    }
+                    ${data.isAdjusted ? '<div class="token-adjustment" style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase;">Adjusted</div>' : ""}
                   </div>
                 </div>
               `;
@@ -293,8 +270,7 @@ function createThemeSection(con, theme) {
             : "";
         })
         .join("");
-      let className =
-        theme === "dark" ? "contextual-group-dark" : "contextual-group";
+      let className = theme === "dark" ? "contextual-group-dark" : "contextual-group";
 
       return rolesHTML
         ? `
@@ -327,32 +303,11 @@ function createColorInputs(colorScheme, onUpdate) {
 
   // ----- Basic Settings -----
   const basicSection = createSection("Basic Settings");
-  basicSection.appendChild(
-    createInput("name", "System Name", colorScheme.name),
-  );
-  basicSection.appendChild(
-    createInput(
-      "weightCount",
-      "Weight Count",
-      colorScheme.weightCount,
-      "number",
-    ),
-  );
+  basicSection.appendChild(createInput("name", "System Name", colorScheme.name));
+  basicSection.appendChild(createInput("weightCount", "Weight Count", colorScheme.weightCount, "number"));
   // ----- Background Colors -----
-  basicSection.appendChild(
-    createColorInput(
-      "lightBg",
-      "Light Theme Background",
-      colorScheme.lightBg || "FFFFFF",
-    ),
-  );
-  basicSection.appendChild(
-    createColorInput(
-      "darkBg",
-      "Dark Theme Background",
-      colorScheme.darkBg || "000000",
-    ),
-  );
+  basicSection.appendChild(createColorInput("lightBg", "Light Theme Background", colorScheme.lightBg || "FFFFFF"));
+  basicSection.appendChild(createColorInput("darkBg", "Dark Theme Background", colorScheme.darkBg || "000000"));
   targetContainer.appendChild(basicSection);
 
   // ----- Color Groups -----
@@ -384,11 +339,7 @@ function createColorInputs(colorScheme, onUpdate) {
         // Numeric fields (gaps, weightCount, minContrast)
         else if (type === "number") {
           const n = rawVal === "" ? 0 : Number(rawVal);
-          updateColorScheme(
-            colorScheme,
-            path,
-            Number.isFinite(n) ? Math.floor(n) : 0,
-          );
+          updateColorScheme(colorScheme, path, Number.isFinite(n) ? Math.floor(n) : 0);
         }
 
         // Everything else
@@ -409,11 +360,7 @@ function createColorInputs(colorScheme, onUpdate) {
 
       if (type === "number") {
         const n = rawVal === "" ? 0 : Number(rawVal);
-        updateColorScheme(
-          colorScheme,
-          path,
-          Number.isFinite(n) ? Math.floor(n) : 0,
-        );
+        updateColorScheme(colorScheme, path, Number.isFinite(n) ? Math.floor(n) : 0);
       } else {
         updateColorScheme(colorScheme, path, rawVal.replace("#", ""));
       }
@@ -460,8 +407,7 @@ function createColorGroupInput(group, index) {
   const div = document.createElement("div");
   div.className = "color-group-control";
 
-  const formattedLabel =
-    group.name.charAt(0).toUpperCase() + group.name.slice(1);
+  const formattedLabel = group.name.charAt(0).toUpperCase() + group.name.slice(1);
 
   div.innerHTML = `
     <div class="color-group-header">
@@ -575,24 +521,13 @@ function createRolesSection(colorScheme) {
     `;
 
     // Min contrast input
-    roleInputs.appendChild(
-      createInput(
-        `roles.${roleKey}.minContrast`,
-        "Min Contrast",
-        role.minContrast,
-        "number",
-      ),
-    );
+    roleInputs.appendChild(createInput(`roles.${roleKey}.minContrast`, "Min Contrast", role.minContrast, "number"));
 
     // Gaps input
-    roleInputs.appendChild(
-      createInput(`roles.${roleKey}.gaps`, "Gaps", role.gaps, "number"),
-    );
+    roleInputs.appendChild(createInput(`roles.${roleKey}.gaps`, "Gaps", role.gaps, "number"));
 
     // Short name input
-    roleInputs.appendChild(
-      createInput(`roles.${roleKey}.shortName`, "Short Name", role.shortName),
-    );
+    roleInputs.appendChild(createInput(`roles.${roleKey}.shortName`, "Short Name", role.shortName));
 
     roleDiv.appendChild(roleInputs);
 
@@ -642,9 +577,7 @@ function createSection(title) {
   const toggleBtn = header.querySelector(".section-toggle-btn");
   header.addEventListener("click", () => {
     content.classList.toggle("hidden");
-    toggleBtn.style.transform = content.classList.contains("hidden")
-      ? "rotate(-90deg)"
-      : "rotate(0deg)";
+    toggleBtn.style.transform = content.classList.contains("hidden") ? "rotate(-90deg)" : "rotate(0deg)";
   });
 
   section.appendChild(header);
@@ -749,12 +682,9 @@ function updateColorScheme(colorScheme, path, value) {
 // CONFIG IMPORT/EXPORT FUNCTIONS
 function exportColorScheme(colorScheme) {
   const dataStr = JSON.stringify(colorScheme, null, 2);
-  const dataUri =
-    "data:application/json;charset=utf-8," + encodeURIComponent(dataStr);
+  const dataUri = "data:application/json;charset=utf-8," + encodeURIComponent(dataStr);
 
-  const exportFileDefaultName = `color-scheme-${
-    colorScheme.name || "untitled"
-  }-${new Date().toISOString().slice(0, 10)}.json`;
+  const exportFileDefaultName = `color-scheme-${colorScheme.name || "untitled"}-${new Date().toISOString().slice(0, 10)}.json`;
 
   const linkElement = document.createElement("a");
   linkElement.setAttribute("href", dataUri);
@@ -772,12 +702,7 @@ function importColorScheme(event, onImportSuccess) {
       const importedScheme = JSON.parse(e.target.result);
 
       // Validate basic structure
-      if (
-        !importedScheme ||
-        !importedScheme.clrGroups ||
-        !Array.isArray(importedScheme.clrGroups) ||
-        !importedScheme.roles
-      ) {
+      if (!importedScheme || !importedScheme.clrGroups || !Array.isArray(importedScheme.clrGroups) || !importedScheme.roles) {
         alert("Invalid color scheme file format");
         return;
       }
@@ -878,9 +803,7 @@ function initializeColorControls() {
 
       if (flat.length === 0) {
         console.warn("No data found for CSV export");
-        alert(
-          "No color token data found to export. Please check if the color system is properly configured.",
-        );
+        alert("No color token data found to export. Please check if the color system is properly configured.");
         return;
       }
 
