@@ -1,7 +1,7 @@
 // COLOR SYSTEM
-const colorScheme = {
-  name: "R316 Color Token System",
-  clrGroups: [
+const demoConfig = {
+  name: "CTM316",
+  colors: [
     { name: "primary", shortName: "Pr", value: "5d10d1" },
     { name: "secondary", shortName: "Sc", value: "904AAA" },
     { name: "tertiary", shortName: "Te", value: "7E8088" },
@@ -13,24 +13,30 @@ const colorScheme = {
     { name: "info", shortName: "In", value: "206BB0" },
   ],
   roles: {
-    text: { name: "Text", shortName: "tx", minContrast: "5", gaps: 3 },
-    layer: { name: "Layer", shortName: "ly", minContrast: "0", gaps: 1 },
-    stroke: { name: "Stroke", shortName: "st", minContrast: "1", gaps: 1 },
-    fill: { name: "Fill", shortName: "fi", minContrast: "4", gaps: 2 },
+    text: { name: "Text", shortName: "tx", minContrast: "5", spread: 3 },
+    layer: { name: "Layer", shortName: "ly", minContrast: "0", spread: 1 },
+    stroke: { name: "Stroke", shortName: "st", minContrast: "1", spread: 1 },
+    fill: { name: "Fill", shortName: "fi", minContrast: "4", spread: 2 },
   },
-  variations: {
-    weakest: { name: "Weakest", code: "1" },
-    weak: { name: "Weak", code: "2" },
-    base: { name: "Base", code: "3" },
-    strong: { name: "Strong", code: "4" },
-    stronger: { name: "Stronger", code: "5" },
-  },
-  weightCount: 23,
-  lightBg: "FFFFFF",
-  darkBg: "000000",
-  weightNames: "",
+  roleSteps: 5,
+  roleStepNames: ["Weakest", "Weak", "Base", "Strong", "Stronger"],
+  colorSteps: 23,
+  rampType: "Symmetric",
+  roleMapping: "Contrast Based",
+  colorStepNames: null || seriesMaker(23),
+  modes: [
+    {
+      name: "light",
+      bg: "FFFFFF",
+    },
+    {
+      name: "dark",
+      bg: "000000",
+    },
+  ],
 };
-
+const roleMappingMethods = ["Contrast Based", "Manual Base Index"];
+const rampTypes = ["Linear", "Balanced", "Symmetric"];
 // CACHE FOR FREQUENT CALLS
 // ============================================================================
 const colorCache = new Map();
@@ -39,73 +45,63 @@ let cachedOutput = null;
 
 // COLOR SYSTEM GENERATOR
 // ============================================================================
-function variableMaker(clrSys) {
+function variableMaker(config) {
+  // base Definitions
+  const colors = config.colors;
+  const roles = config.roles;
+  const rampLength = config.colorSteps;
+  let stepNames = config.colorStepNames || seriesMaker(config.colorSteps);
+  let roleStepNames = config.roleStepNames || seriesMaker(config.roleStepNames);
+
   // Return cached result if the inputs haven't changed to avoid recalculating
   const inputHash = JSON.stringify({
-    clrGroups: clrSys.clrGroups.map((g) => ({
+    colors: config.colors.map((g) => ({
       ...g,
       value: normalizeHex(g.value),
     })),
-    weightCount: clrSys.weightCount,
-    lightBg: normalizeHex(clrSys.lightBg),
-    darkBg: normalizeHex(clrSys.darkBg),
-    roles: clrSys.roles,
+    rampLength: config.colorSteps,
+    lightBg: normalizeHex(config.modes[0].bg),
+    darkBg: normalizeHex(config.modes[1].bg),
+    roles: config.roles,
   });
 
   if (inputHash === lastInputHash && cachedOutput) {
     return cachedOutput;
   }
 
-  const clrGroups = clrSys.clrGroups;
-  const clrRoles = clrSys.roles;
-  const clrWeights = seriesMaker(clrSys.weightCount);
-
   // Pre-calculate normalized backgrounds
-  const lightBg = normalizeHex(clrSys.lightBg) || "#FFFFFF";
-  const darkBg = normalizeHex(clrSys.darkBg) || "#000000";
+  const lightBg = normalizeHex(config.modes[0].bg);
+  const darkBg = normalizeHex(config.modes[1].bg);
 
   // Pre-allocate objects with known structures
-  const rawVarObj = Object.create(null);
-  const conVarObj = {
+  const clrRampsCollection = Object.create(null);
+  const tokensCollection = {
     light: Object.create(null),
     dark: Object.create(null),
   };
 
-  const weightCount = clrWeights.length;
-
-  // Pre-calculate weight indices over all weights
-  const weightIndices = new Array(weightCount);
-  for (let i = 0; i < weightCount; i++) weightIndices[i] = i;
-
   const errors = { critical: [], warnings: [], notices: [] };
 
-  // RAW COLORS GENERATION
+  // Color Ramps Creation
   // ========================================================================================================================================================
-  for (let gIdx = 0; gIdx < clrGroups.length; gIdx++) {
-    const group = clrGroups[gIdx];
-    const groupName = group.name;
-    const seed = normalizeHex(group.value) || "#000000";
-
-    // Batch generate colors to cover all defined weights
-    const colorVars = colorStepsMaker(seed, clrWeights);
-    colorVars.reverse(); // Values map from lightest to darkest weights
-
-    const rawGroupObj = Object.create(null);
-    rawVarObj[groupName] = rawGroupObj;
+  for (const color of colors) {
+    const colorRamp = colorRampMaker(color.value, rampLength, config.rampType);
+    const ramp = Object.create(null);
+    clrRampsCollection[color.name] = ramp;
 
     // Evaluate contrasts against both light and dark modes
-    for (let wIdx = 0; wIdx < weightCount; wIdx++) {
-      const weight = clrWeights[wIdx];
-      const value = normalizeHex(colorVars[wIdx]) || seed;
+    for (let wIdx = 0; wIdx < rampLength; wIdx++) {
+      const weight = stepNames[wIdx];
+      const value = normalizeHex(colorRamp[wIdx]);
 
       // Extract ratio values efficiently without redundancy
       const lightContrast = contrastRatio(value, lightBg);
       const darkContrast = contrastRatio(value, darkBg);
 
-      rawGroupObj[weight] = {
+      ramp[weight] = {
         value,
-        tknName: `${groupName}-${weight}`,
-        shortName: `${group.shortName}-${weight}`,
+        stepName: `${color.name}-${weight}`,
+        shortName: `${color.shortName}-${weight}`,
         contrast: {
           light: {
             ratio: lightContrast,
@@ -120,240 +116,188 @@ function variableMaker(clrSys) {
     }
   }
 
-  // Check if a base index can satisfy all expected scale variations
-  function canUseBaseIndex(groupName, baseIdx, role, themeName) {
-    const gap = role.gaps;
-    const maxOffset = 2 * gap; // Needs space for weakest (-2*gap) and stronger (+2*gap)
-
-    // A set can be made reasonably if there is enough space on both ends
-    // to step out the variations without crossing index 0 or weightCount - 1.
-    return baseIdx - maxOffset >= 0 && baseIdx + maxOffset < weightCount;
-  }
-
-  // CONTEXTUAL TOKENS GENERATION
+  // Role Tokens Creation
   // ========================================================================================================================================================
-  const themes = [
-    { name: "light", bg: lightBg },
-    { name: "dark", bg: darkBg },
-  ];
 
   // Process themes to output contextual matching variations
-  for (const theme of themes) {
-    const themeName = theme.name;
-    const conTheme = conVarObj[themeName];
+  for (const mode of config.modes) {
+    const modeName = mode.name; // Get the string name once
+    const conTheme = tokensCollection[modeName];
+    const bgColor = modeName === "light" ? lightBg : darkBg;
 
-    for (const clr of clrGroups) {
-      const clrName = clr.name;
+    // Loops for Colors
+    for (const color of colors) {
+      const clrName = color.name;
       const conGroup = Object.create(null);
       conTheme[clrName] = conGroup;
-      const roleNames = Object.keys(clrRoles);
+      const roleNames = Object.keys(roles);
+      if (config.roleMapping === "Contrast Based") {
+        // Loop for Roles
+        for (const roleName of roleNames) {
+          const role = roles[roleName];
+          const spread = role.spread;
+          const minC = parseFloat(role.minContrast);
+          const conRole = Object.create(null);
+          conGroup[roleName] = conRole;
 
-      for (const roleName of roleNames) {
-        const role = clrRoles[roleName];
-        const gap = role.gaps;
-        const minC = parseFloat(role.minContrast);
-        const conRole = Object.create(null);
-        conGroup[roleName] = conRole;
+          // Find Usable Base Index
+          let baseIdx = -1;
 
-        // Find Usable Base Index
-        let baseIdx = -1;
+          // Use contextual contrast to determine direction of "stronger" (higher contrast)
+          const highestWeight = stepNames[rampLength - 1];
+          const lowestWeight = stepNames[0];
+          const cEnd = clrRampsCollection[clrName][highestWeight].contrast[modeName].ratio;
+          const cStart = clrRampsCollection[clrName][lowestWeight].contrast[modeName].ratio;
 
-        // Use contextual contrast to determine direction of "stronger" (higher contrast)
-        const highestWeight = clrWeights[weightCount - 1];
-        const lowestWeight = clrWeights[0];
-        const cEnd = rawVarObj[clrName][highestWeight].contrast[themeName].ratio;
-        const cStart = rawVarObj[clrName][lowestWeight].contrast[themeName].ratio;
+          // If the darkest color (end) has more contrast, positive index adds contrast.
+          // If the lightest color (start) has more contrast, positive index removes contrast.
+          const contrastGrowthDir = cEnd > cStart ? 1 : -1;
 
-        // If the darkest color (end) has more contrast, positive index adds contrast.
-        // If the lightest color (start) has more contrast, positive index removes contrast.
-        const contrastGrowthDir = cEnd > cStart ? 1 : -1;
+          const isDarkTheme = modeName === "dark";
 
-        const isDarkTheme = themeName === "dark";
+          if (isDarkTheme) {
+            for (let i = rampLength - 1; i >= 0; i--) {
+              const weight = stepNames[i];
+              const c = clrRampsCollection[clrName][weight].contrast[modeName].ratio;
 
-        if (isDarkTheme) {
-          for (let i = weightCount - 1; i >= 0; i--) {
-            const weight = clrWeights[i];
-            const c = rawVarObj[clrName][weight].contrast[themeName].ratio;
-
-            if (c >= minC) {
-              baseIdx = i;
-              break;
+              if (c >= minC) {
+                baseIdx = i;
+                break;
+              }
             }
-          }
-        } else {
-          for (let i = 0; i < weightCount; i++) {
-            const weight = clrWeights[i];
-            const c = rawVarObj[clrName][weight].contrast[themeName].ratio;
-
-            if (c >= minC) {
-              baseIdx = i;
-              break;
-            }
-          }
-        }
-
-        // FALLBACK: If bounds constraints or general availability prevented a match
-        if (baseIdx === -1) {
-          let bestIdx = -1;
-          let maxContrast = -1;
-
-          // Find the color that has MAXIMUM possible contrast
-          for (let i = 0; i < weightCount; i++) {
-            const weight = clrWeights[i];
-            const c = rawVarObj[clrName][weight].contrast[themeName].ratio;
-
-            if (c > maxContrast) {
-              bestIdx = i;
-              maxContrast = c;
-            }
-          }
-
-          if (bestIdx !== -1) {
-            baseIdx = bestIdx;
-            errors.critical.push({
-              color: clrName,
-              role: roleName,
-              theme: themeName,
-              error: `Cannot meet minimum contrast ${minC}. using closest available (${maxContrast.toFixed(2)}).`,
-            });
           } else {
-            baseIdx = weightCount >> 1; // Integer division by 2
-            errors.critical.push({
+            for (let i = 0; i < rampLength; i++) {
+              const weight = stepNames[i];
+              const c = clrRampsCollection[clrName][weight].contrast[modeName].ratio;
+
+              if (c >= minC) {
+                baseIdx = i;
+                break;
+              }
+            }
+          }
+
+          // FALLBACK: If bounds constraints or general availability prevented a match
+          if (baseIdx === -1) {
+            let bestIdx = -1;
+            let maxContrast = -1;
+
+            // Find the color that has MAXIMUM possible contrast
+            for (let i = 0; i < rampLength; i++) {
+              const weight = stepNames[i];
+              const c = clrRampsCollection[clrName][weight].contrast[modeName].ratio;
+
+              if (c > maxContrast) {
+                bestIdx = i;
+                maxContrast = c;
+              }
+            }
+
+            if (bestIdx !== -1) {
+              baseIdx = bestIdx;
+              errors.critical.push({
+                color: clrName,
+                role: roleName,
+                theme: modeName,
+                error: `Cannot meet minimum contrast ${minC}. using closest available (${maxContrast.toFixed(2)}).`,
+              });
+            } else {
+              baseIdx = rampLength >> 1; // Integer division by 2
+              errors.critical.push({
+                color: clrName,
+                role: roleName,
+                theme: modeName,
+                error: "Cannot evaluate contrast for any weight.",
+              });
+            }
+          }
+
+          // Clamp base index to boundaries to prevent array overflow
+          // ============================================================================
+          const maxOffset = 2 * spread;
+          // Determine safe min and max boundaries
+          const minAllowed = maxOffset;
+          const maxAllowed = rampLength - 1 - maxOffset;
+
+          if (baseIdx < minAllowed) baseIdx = minAllowed;
+          if (baseIdx > maxAllowed) baseIdx = maxAllowed;
+
+          // Generate Contextual Variations
+          // ============================================================================
+          // Define standard token position offsets
+          const offsetValues = [
+            { key: "weakest", offset: -2 * spread },
+            { key: "weak", offset: -spread },
+            { key: "base", offset: 0 },
+            { key: "strong", offset: spread },
+            { key: "stronger", offset: 2 * spread },
+          ];
+
+          for (let vIdx = 0; vIdx < offsetValues.length; vIdx++) {
+            const { key: variation, offset: pureOffset } = offsetValues[vIdx];
+
+            // Ensure stronger ALWAYS means higher contrast relative to background!
+            let idx = baseIdx + pureOffset * contrastGrowthDir;
+            let adjusted = false;
+
+            // Clamp to valid range
+            if (idx < 0) {
+              idx = 0;
+              adjusted = true;
+            } else if (idx >= rampLength) {
+              idx = rampLength - 1;
+              adjusted = true;
+            }
+
+            const weight = stepNames[idx];
+            const data = clrRampsCollection[clrName][weight];
+
+            conRole[variation] = {
+              // Token Identity
+              tknName: `${clrName}-${role.name}-${variation}`,
               color: clrName,
-              role: roleName,
-              theme: themeName,
-              error: "Cannot evaluate contrast for any weight.",
-            });
+              role: role.name,
+              variation: variation,
+              // Token Value
+              tknRef: data.stepName, // Fixed: was data.clrName which doesn't exist
+              value: data.value,
+              // Contrast
+              contrast: {
+                ratio: data.contrast[modeName].ratio,
+                rating: data.contrast[modeName].rating,
+              },
+              // Mapping Adjustments
+              variationOffset: pureOffset,
+              isAdjusted: adjusted,
+            };
+            // Push Warning
+            if (adjusted) {
+              errors.warnings.push({
+                color: clrName,
+                role: roleName,
+                variation,
+                theme: modeName,
+                warning: `Variation '${variation}' clamped due to overflow`,
+              });
+            }
           }
         }
-
-        // Clamp base index to boundaries to prevent array overflow
-        // ============================================================================
-        const maxOffset = 2 * gap;
-        // Determine safe min and max boundaries
-        const minAllowed = maxOffset;
-        const maxAllowed = weightCount - 1 - maxOffset;
-
-        if (baseIdx < minAllowed) baseIdx = minAllowed;
-        if (baseIdx > maxAllowed) baseIdx = maxAllowed;
-
-        // Generate Contextual Variations
-        // ============================================================================
-        // Define standard token position offsets
-        const offsetValues = [
-          { key: "weakest", offset: -2 * gap },
-          { key: "weak", offset: -gap },
-          { key: "base", offset: 0 },
-          { key: "strong", offset: gap },
-          { key: "stronger", offset: 2 * gap },
-        ];
-
-        for (let vIdx = 0; vIdx < offsetValues.length; vIdx++) {
-          const { key: variation, offset: pureOffset } = offsetValues[vIdx];
-
-          // Ensure stronger ALWAYS means higher contrast relative to background!
-          let idx = baseIdx + pureOffset * contrastGrowthDir;
-          let adjusted = false;
-
-          // Clamp to valid range
-          if (idx < 0) {
-            idx = 0;
-            adjusted = true;
-          } else if (idx >= weightCount) {
-            idx = weightCount - 1;
-            adjusted = true;
-          }
-
-          const weight = clrWeights[idx];
-          const data = rawVarObj[clrName][weight];
-
-          conRole[variation] = {
-            value: data.value,
-            contrastRatio: data.contrast[themeName].ratio,
-            contrastRating: data.contrast[themeName].rating,
-            valueRef: data.tknName,
-            tknRole: roleName,
-            roleName: role.name, // Display name
-            tknClGroup: clrName,
-            weight,
-            variationOffset: pureOffset,
-            isAdjusted: adjusted,
-          };
-
-          if (adjusted) {
-            errors.warnings.push({
-              color: clrName,
-              role: roleName,
-              variation,
-              theme: themeName,
-              warning: `Variation '${variation}' clamped due to overflow`,
-            });
-          }
-        }
+      } else if (config.roleMapping === "Manual Base Index") {
+        //Instructions: instead of min contrast we will have the specific Color Ramp Step to use as the base step of role token and using spread we will calculate all the steps for the role tokens.
       }
+
+      // Preparing Output
+      const output = {
+        colorRamps: clrRampsCollection,
+        colorTokens: tokensCollection,
+        errors,
+      };
+
+      // Cache the result
+      lastInputHash = inputHash;
+      cachedOutput = output;
+
+      return output;
     }
   }
-  // Preparing Output
-  const output = {
-    raw: rawVarObj,
-    ctx: conVarObj,
-    errors,
-    backgrounds: {
-      light: normalizeHex(lightBg),
-      dark: normalizeHex(darkBg),
-    },
-    metadata: {
-      groups: clrGroups.length,
-      weights: weightCount,
-      roles: Object.keys(clrRoles).length,
-      themes: 2,
-    },
-  };
-
-  // Cache the result
-  lastInputHash = inputHash;
-  cachedOutput = output;
-  // For debugging: Log primary fill base colors
-  console.log(output);
-
-  return output;
 }
-// function ADDITIONAL_OPTIMIZATIONS(params) {
-//   // ADDITIONAL OPTIMIZATIONS
-//   // ============================================================================
-
-//   // 1. LAZY EVALUATION: Only generate what's needed
-//   function getContextualToken(clrSys, theme, groupName, roleName, variation) {
-//     // Could implement a more targeted generation if only specific tokens are needed
-//   }
-
-//   // 2. INCREMENTAL UPDATES: Update only changed parts
-//   function updateColorSchemeProperty(clrSys, propertyPath, newValue) {
-//     // Clear cache if relevant property changed
-//     if (propertyPath.startsWith("clrGroups") || propertyPath === "weightCount" || propertyPath === "lightBg" || propertyPath === "darkBg") {
-//       lastInputHash = null;
-//     }
-//     // Update scheme...
-//   }
-
-//   // 3. WORKER SUPPORT: For very heavy computations
-//   if (typeof window !== "undefined" && window.Worker) {
-//     const colorWorker = new Worker("color-worker.js");
-//     // Could offload heavy computations to web worker
-//   }
-
-//   // 4. VALIDATION LAYER: Add schema validation
-//   const colorSchemeSchema = {
-//     // Define expected structure for validation
-//   };
-
-//   function validateColorScheme(scheme) {
-//     // Validate before processing
-//     return true; // or validation result
-//   }
-
-//   // 5. BATCH PROCESSING: For multiple operations
-//   function batchVariableMaker(schemes) {
-//     // Process multiple schemes at once if needed
-//   }
-// }

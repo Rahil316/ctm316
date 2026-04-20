@@ -1,112 +1,272 @@
-//Generate CSS file
+// Generate CSS file
 function flattenToCss(collection) {
-  const { raw, con, backgrounds } = collection;
-  const cssVars = { light: {}, dark: {} };
+  // collection has: { colorRamps, colorTokens, errors }
+  const cssVars = { 
+    raw: {},      // Raw color ramp variables (shared)
+    light: {},    // Light theme tokens (reference raw vars)
+    dark: {}      // Dark theme tokens (reference raw vars)
+  };
 
-  // Raw colors (common to both themes) - include leading '#'
-  Object.entries(raw).forEach(([group, weights]) => {
+  if (!collection.colorRamps) {
+    console.error("No colorRamps found in collection");
+    return cssVars;
+  }
+
+  // 1. Raw colors (color ramps) - defined once, used by both themes
+  Object.entries(collection.colorRamps).forEach(([group, weights]) => {
     Object.entries(weights).forEach(([weight, data]) => {
+      if (!data?.value) return;
       const varName = `--${slugify(group)}-${slugify(weight)}`;
-      const value = normalizeHex(data.value) || "#000000";
-      cssVars.light[varName] = value;
-      cssVars.dark[varName] = value;
+      const value = data.value || "#000000";
+      cssVars.raw[varName] = value;
     });
   });
 
-  // Contextual tokens reference raw color variables
-  Object.entries(con).forEach(([theme, themeData]) => {
-    Object.entries(themeData).forEach(([group, roles]) => {
-      Object.entries(roles).forEach(([role, variations]) => {
-        Object.entries(variations).forEach(([variation, data]) => {
-          const ref = data.valueRef || "";
-          const lastDash = ref.lastIndexOf("-");
-          const refGroup = slugify(ref.substring(0, lastDash));
-          const refWeight = slugify(ref.substring(lastDash + 1));
-          const rawVarName = `--${refGroup}-${refWeight}`;
-          cssVars[theme][
-            `--${slugify(group)}-${slugify(role)}-${slugify(variation)}`
-          ] = `var(${rawVarName})`;
+  // 2. Contextual tokens for each theme - reference raw color variables
+  if (collection.colorTokens) {
+    Object.entries(collection.colorTokens).forEach(([theme, themeData]) => {
+      if (!themeData) return;
+      
+      Object.entries(themeData).forEach(([group, roles]) => {
+        if (!roles) return;
+        
+        Object.entries(roles).forEach(([role, variations]) => {
+          if (!variations) return;
+          
+          Object.entries(variations).forEach(([variation, data]) => {
+            if (!data?.tknRef) return;
+            
+            // Create token name
+            const tokenName = `--${slugify(group)}-${slugify(data.role || role)}-${slugify(variation)}`;
+            
+            // Reference the raw color variable
+            const ref = data.tknRef;
+            const lastDash = ref.lastIndexOf("-");
+            if (lastDash === -1) return;
+            
+            const refGroup = slugify(ref.substring(0, lastDash));
+            const refWeight = slugify(ref.substring(lastDash + 1));
+            const rawVarRef = `var(--${refGroup}-${refWeight})`;
+            
+            cssVars[theme][tokenName] = rawVarRef;
+          });
         });
       });
     });
-  });
-
-  // Backgrounds (include #)
-  cssVars.light["--bg-primary"] = normalizeHex(backgrounds.light) || "#FFFFFF";
-  cssVars.dark["--bg-primary"] = normalizeHex(backgrounds.dark) || "#000000";
+  }
 
   return cssVars;
 }
 
 function generateCss(cssVars) {
-  let css = `/* Color Tokens - Auto-generated */\n\n`;
-  // Light theme (default)
+  let css = `/* Color Tokens - Auto-generated */\n`;
+  css += `/* Generated on: ${new Date().toISOString()} */\n\n`;
+  
+  // 1. Raw Color Ramps (base colors)
+  css += `/* ============================================\n`;
+  css += `   RAW COLOR RAMPS\n`;
+  css += `   These are the base color values\n`;
+  css += `   ============================================ */\n\n`;
+  
   css += `:root {\n`;
+  Object.entries(cssVars.raw).forEach(([variable, value]) => {
+    css += `  ${variable}: ${value};\n`;
+  });
+  css += `}\n\n`;
+  
+  // 2. Light Theme Tokens (reference raw variables)
+  css += `/* ============================================\n`;
+  css += `   LIGHT THEME TOKENS\n`;
+  css += `   References to raw color ramps\n`;
+  css += `   ============================================ */\n\n`;
+  
+  css += `:root,\n`;
+  css += `.light,\n`;
+  css += `[data-theme="light"] {\n`;
   Object.entries(cssVars.light).forEach(([variable, value]) => {
     css += `  ${variable}: ${value};\n`;
   });
   css += `}\n\n`;
 
-  // Dark theme using prefers-color-scheme
-  css += `@media (prefers-color-scheme: dark) {\n  :root {\n`;
+  // 3. Dark Theme Tokens (reference raw variables)
+  css += `/* ============================================\n`;
+  css += `   DARK THEME TOKENS\n`;
+  css += `   References to raw color ramps\n`;
+  css += `   ============================================ */\n\n`;
+  
+  css += `@media (prefers-color-scheme: dark) {\n`;
+  css += `  :root {\n`;
   Object.entries(cssVars.dark).forEach(([variable, value]) => {
     css += `    ${variable}: ${value};\n`;
   });
-  css += `  }\n}\n\n`;
-
-  // Utility `.dark` class
-  css += `.dark {\n`;
+  css += `  }\n`;
+  css += `}\n\n`;
+  
+  css += `.dark,\n`;
+  css += `[data-theme="dark"] {\n`;
   Object.entries(cssVars.dark).forEach(([variable, value]) => {
     css += `  ${variable}: ${value};\n`;
   });
   css += `}\n`;
+
   return css;
 }
 
-// Handle different possible structures passed from the core data generator
+// Alternative: Generate separate CSS files for each theme
+function generateSeparateCssFiles(cssVars) {
+  const files = {
+    raw: `/* Raw Color Ramps - Base Colors */\n:root {\n${Object.entries(cssVars.raw).map(([varName, value]) => `  ${varName}: ${value};`).join("\n")}\n}`,
+    light: `/* Light Theme Tokens */\n.light,\n[data-theme="light"] {\n${Object.entries(cssVars.light).map(([varName, value]) => `  ${varName}: ${value};`).join("\n")}\n}`,
+    dark: `/* Dark Theme Tokens */\n.dark,\n[data-theme="dark"] {\n${Object.entries(cssVars.dark).map(([varName, value]) => `  ${varName}: ${value};`).join("\n")}\n}`
+  };
+  return files;
+}
+
+// Download CSS file
 function downloadCss() {
   try {
     // Get the current scheme
-    const currentScheme = window.currentEditableScheme || colorScheme;
-    console.log("Using scheme:", currentScheme.name);
+    const currentScheme = window.currentEditableScheme || demoConfig;
+    console.log("Generating CSS for scheme:", currentScheme.name);
 
     // Get the collection from the generator
     const collection = variableMaker(currentScheme);
 
-    // Structure is now unified thanks to variableMaker update
-    const { raw, ctx: con, backgrounds } = collection;
+    if (!collection || !collection.colorRamps) {
+      throw new Error("Invalid collection generated from variableMaker");
+    }
 
-    console.log("Extracted data:", {
-      rawKeys: Object.keys(raw),
-      conKeys: Object.keys(con),
-      backgrounds,
-    });
-
-    // Create a properly structured collection for flattenToCss
-    const fixedCollection = { raw, con, backgrounds };
-    const cssVars = flattenToCss(fixedCollection);
+    // Flatten to CSS variables
+    const cssVars = flattenToCss(collection);
+    
+    // Generate CSS content
     const cssContent = generateCss(cssVars);
+    
+    // Create and trigger download
     const blob = new Blob([cssContent], { type: "text/css" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "tokens.css";
+    a.download = `${slugify(currentScheme.name)}-tokens.css`;
     a.click();
     URL.revokeObjectURL(url);
+    
+    console.log("CSS downloaded successfully");
+    console.log(`Raw colors: ${Object.keys(cssVars.raw).length}`);
+    console.log(`Light tokens: ${Object.keys(cssVars.light).length}`);
+    console.log(`Dark tokens: ${Object.keys(cssVars.dark).length}`);
   } catch (error) {
     console.error("Error generating CSS:", error);
-    alert("Error generating CSS. Please check console for details.");
+    alert(`Error generating CSS: ${error.message}`);
   }
 }
 
-//Generate CSV file
+// Generate SCSS format with proper variable references
+function generateScss(collection) {
+  if (!collection || !collection.colorRamps) return "";
+  
+  let scss = `// Color Tokens - Auto-generated SCSS\n`;
+  scss += `// Generated on: ${new Date().toISOString()}\n\n`;
+  
+  // 1. Raw color ramp variables
+  scss += `// ============================================\n`;
+  scss += `// RAW COLOR RAMPS\n`;
+  scss += `// ============================================\n\n`;
+  
+  Object.entries(collection.colorRamps).forEach(([group, weights]) => {
+    scss += `// ${group.toUpperCase()} Ramps\n`;
+    Object.entries(weights).forEach(([weight, data]) => {
+      if (!data?.value) return;
+      const varName = `$${slugify(group)}-${slugify(weight)}`;
+      scss += `${varName}: ${data.value};\n`;
+    });
+    scss += `\n`;
+  });
+  
+  // 2. Light theme tokens (referencing raw variables)
+  scss += `// ============================================\n`;
+  scss += `// LIGHT THEME TOKENS\n`;
+  scss += `// ============================================\n\n`;
+  
+  scss += `$light-theme: (\n`;
+  if (collection.colorTokens?.light) {
+    Object.entries(collection.colorTokens.light).forEach(([group, roles]) => {
+      Object.entries(roles).forEach(([role, variations]) => {
+        Object.entries(variations).forEach(([variation, data]) => {
+          if (!data?.tknRef) return;
+          const varName = `${slugify(group)}-${slugify(data.role || role)}-${slugify(variation)}`;
+          const ref = data.tknRef;
+          const lastDash = ref.lastIndexOf("-");
+          const refGroup = slugify(ref.substring(0, lastDash));
+          const refWeight = slugify(ref.substring(lastDash + 1));
+          scss += `  $${varName}: $${refGroup}-${refWeight},\n`;
+        });
+      });
+    });
+  }
+  scss += `);\n\n`;
+  
+  // 3. Dark theme tokens (referencing raw variables)
+  scss += `// ============================================\n`;
+  scss += `// DARK THEME TOKENS\n`;
+  scss += `// ============================================\n\n`;
+  
+  scss += `$dark-theme: (\n`;
+  if (collection.colorTokens?.dark) {
+    Object.entries(collection.colorTokens.dark).forEach(([group, roles]) => {
+      Object.entries(roles).forEach(([role, variations]) => {
+        Object.entries(variations).forEach(([variation, data]) => {
+          if (!data?.tknRef) return;
+          const varName = `${slugify(group)}-${slugify(data.role || role)}-${slugify(variation)}`;
+          const ref = data.tknRef;
+          const lastDash = ref.lastIndexOf("-");
+          const refGroup = slugify(ref.substring(0, lastDash));
+          const refWeight = slugify(ref.substring(lastDash + 1));
+          scss += `  $${varName}: $${refGroup}-${refWeight},\n`;
+        });
+      });
+    });
+  }
+  scss += `);\n`;
+  
+  return scss;
+}
+
+// Generate simplified CSS (just the tokens, no media queries)
+function generateSimpleCss(cssVars) {
+  let css = `/* Color Tokens - Simplified */\n\n`;
+  
+  css += `/* Raw Color Ramps */\n`;
+  css += `:root {\n`;
+  Object.entries(cssVars.raw).forEach(([variable, value]) => {
+    css += `  ${variable}: ${value};\n`;
+  });
+  css += `}\n\n`;
+  
+  css += `/* Light Theme */\n`;
+  css += `.light-theme {\n`;
+  Object.entries(cssVars.light).forEach(([variable, value]) => {
+    css += `  ${variable}: ${value};\n`;
+  });
+  css += `}\n\n`;
+  
+  css += `/* Dark Theme */\n`;
+  css += `.dark-theme {\n`;
+  Object.entries(cssVars.dark).forEach(([variable, value]) => {
+    css += `  ${variable}: ${value};\n`;
+  });
+  css += `}\n`;
+  
+  return css;
+}
+
+// Generate CSV file (same as before, kept for compatibility)
 function generateCSV({ data, columns }) {
-  const rows = Array.isArray(data)
-    ? data
-    : Object.entries(data).map(([key, value]) => ({ key, ...value }));
+  if (!data || data.length === 0) return "";
+  
+  const rows = Array.isArray(data) ? data : Object.entries(data).map(([key, value]) => ({ key, ...value }));
 
   const header = columns.map((col) => col.label);
-
   const body = rows.map((row) => {
     return columns
       .map((col) => {
@@ -120,9 +280,8 @@ function generateCSV({ data, columns }) {
 }
 
 function getValueByPath(obj, path) {
-  return path
-    .split(".")
-    .reduce((acc, key) => (acc ? acc[key] : undefined), obj);
+  if (!obj || !path) return undefined;
+  return path.split(".").reduce((acc, key) => (acc ? acc[key] : undefined), obj);
 }
 
 function escapeCSV(value) {
@@ -130,31 +289,15 @@ function escapeCSV(value) {
   return /["\n,]/.test(str) ? `"${str}"` : str;
 }
 
-function flattenTokensForCsv(out) {
+function flattenTokensForCsv(collection) {
   const result = [];
 
-  // Handle different possible structures from variableMaker
-  let themesData;
+  if (!collection || !collection.colorTokens) {
+    console.error("Cannot find theme data in output:", collection);
+    return result;
+  }
 
-  // Case 1: out has con property with light/dark themes
-  if (out.con && out.con.light && out.con.dark) {
-    themesData = out.con;
-  }
-  // Case 2: out has ctx property with light/dark themes
-  else if (out.ctx && out.ctx.light && out.ctx.dark) {
-    themesData = out.ctx;
-  }
-  // Case 3: out itself has light/dark themes
-  else if (out.light && out.dark) {
-    themesData = out;
-  }
-  // Case 4: Maybe con is at a different level
-  else if (out.ctx && out.ctx.con) {
-    themesData = out.ctx.con;
-  } else {
-    console.error("Cannot find theme data in output:", out);
-    return result; // Return empty array instead of crashing
-  }
+  const themesData = collection.colorTokens;
 
   ["light", "dark"].forEach((theme) => {
     const groups = themesData[theme];
@@ -184,14 +327,16 @@ function flattenTokensForCsv(out) {
           const item = variations[variation];
 
           result.push({
-            theme,
-            group,
-            role: item.roleName || role, // Use display name if available
-            variation,
-            weight: item.weight || "",
+            theme: theme,
+            group: group,
+            role: item.role || role,
+            variation: variation,
             value: item.value || "",
-            contrastRatio: item.contrastRatio || 0,
-            contrastRating: item.contrastRating || "",
+            tokenRef: item.tknRef || "",
+            tokenName: item.tknName || "",
+            contrastRatio: item.contrast?.ratio?.toFixed(2) || "0",
+            contrastRating: item.contrast?.rating || "",
+            isAdjusted: item.isAdjusted ? "Yes" : "No"
           });
         }
       }
@@ -202,12 +347,45 @@ function flattenTokensForCsv(out) {
   return result;
 }
 
+// Download CSV file
 function downloadCSV(filename, csvString) {
-  const blob = new Blob([csvString], { type: "text/csv" });
+  if (!csvString || csvString.length === 0) {
+    alert("No data to export");
+    return;
+  }
+  
+  const blob = new Blob(["\uFEFF" + csvString], { type: "text/csv;charset=utf-8;" });
   const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
+  const url = URL.createObjectURL(blob);
+  
+  link.href = url;
+  link.setAttribute("download", filename);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+// Export all functions
+if (typeof window !== 'undefined') {
+  window.downloadCss = downloadCss;
+  window.downloadCSV = downloadCSV;
+  window.flattenTokensForCsv = flattenTokensForCsv;
+  window.generateCSV = generateCSV;
+  window.generateScss = generateScss;
+}
+
+// Export for module use
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    flattenToCss,
+    generateCss,
+    downloadCss,
+    generateCSV,
+    flattenTokensForCsv,
+    downloadCSV,
+    generateScss,
+    generateSimpleCss,
+    generateSeparateCssFiles
+  };
 }
