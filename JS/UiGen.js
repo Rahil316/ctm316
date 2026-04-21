@@ -1,4 +1,7 @@
-// GLOBAL VARIABLE TO TRACK CURRENT EDITABLE SCHEME
+// UiGen.js - UI rendering and interaction layer.
+// Builds the sidebar controls and main token display; delegates data work to ClrGen/DocGen.
+
+// Active color scheme shared across all event handlers and re-renders.
 window.currentEditableScheme = null;
 
 // UTILITY FUNCTIONS
@@ -23,11 +26,9 @@ function filterErrorsByTheme(errors, theme) {
 
 function displayColorTokens(collection) {
   const container = document.getElementById("rawColorsContainer");
-
   container.classList.add("color-system-updating");
   const fragment = document.createDocumentFragment();
 
-  // Create Panels
   const rawPanel = document.createElement("div");
   rawPanel.id = "panel-colorRamps";
   rawPanel.classList.add("tab-panel");
@@ -47,7 +48,6 @@ function displayColorTokens(collection) {
   if (darkErrors) darkPanel.appendChild(createErrorSection(darkErrors));
   darkPanel.appendChild(createThemeSection(collection.colorTokens.dark, "Dark"));
 
-  // Restore Active Tab and toggles Dark Mode Body class
   const activeTabBtn = document.querySelector(".tab-btn.active");
   const activeTargetId = activeTabBtn ? activeTabBtn.dataset.target : "panel-colorRamps";
 
@@ -63,38 +63,29 @@ function displayColorTokens(collection) {
   fragment.appendChild(rawPanel);
   fragment.appendChild(lightPanel);
   fragment.appendChild(darkPanel);
-
   container.innerHTML = "";
   container.appendChild(fragment);
 
-  // Setup tab click listeners efficiently if not already set
+  // Tab listener is registered once and survives panel re-renders (panels are replaced, nav bar is not).
   if (!window.tabListenersSet) {
     const tabsContainer = document.querySelector(".tabs-navigation");
     if (tabsContainer) {
       tabsContainer.addEventListener("click", (e) => {
         const btn = e.target.closest(".tab-btn");
         if (!btn) return;
-
-        // Update buttons
         document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
-
-        // Update panels
         const targetId = btn.dataset.target;
         document.querySelectorAll(".tab-panel").forEach((p) => {
           p.classList.remove("active");
           p.classList.remove("animate-in");
         });
-
         const targetPanel = document.getElementById(targetId);
         if (targetPanel) {
           targetPanel.classList.add("active");
-          // Trigger reflow to ensure animation runs when clicking tabs
           void targetPanel.offsetWidth;
           targetPanel.classList.add("animate-in");
         }
-
-        // Toggle UI Dark Mode
         if (targetId === "panel-tokens-dark") {
           document.body.classList.add("app-dark-mode");
         } else {
@@ -104,7 +95,6 @@ function displayColorTokens(collection) {
       window.tabListenersSet = true;
     }
   }
-
   requestAnimationFrame(() => {
     container.classList.remove("color-system-updating");
   });
@@ -118,9 +108,7 @@ function createErrorSection(errors) {
         if (e.color) ctxArray.push(`Group: <strong>${e.color.toUpperCase()}</strong>`);
         if (e.role) ctxArray.push(`Role: <strong>${e.role}</strong>`);
         if (e.variation) ctxArray.push(`Var: <strong>${e.variation}</strong>`);
-
         let prefixHTML = ctxArray.length ? `<span style="opacity:0.85; margin-right:8px;">[ ${ctxArray.join(" | ")} ]</span>` : "";
-
         return `<div class="error-item">${prefixHTML}${e.error || e.warning || e.notice}</div>`;
       })
       .join("");
@@ -151,13 +139,11 @@ function createErrorSection(errors) {
   const header = section.querySelector(".errors-header");
   const content = section.querySelector(".errors-content");
   const toggle = section.querySelector(".errors-toggle");
-
   header.addEventListener("click", () => {
     const isCollapsed = toggle.classList.contains("collapsed");
     toggle.classList.toggle("collapsed", !isCollapsed);
     content.classList.toggle("expanded", isCollapsed);
   });
-
   return section;
 }
 
@@ -193,7 +179,6 @@ function createRawSection(colorRamps) {
         `;
         })
         .join("");
-
       return `
         <div class="color-group">
           <h3 class="color-group__title">${colorGroup.toUpperCase()}</h3>
@@ -202,32 +187,22 @@ function createRawSection(colorRamps) {
       `;
     })
     .join("");
-
   const section = document.createElement("div");
   section.className = "raw-colors-section";
   section.innerHTML = rawHTML;
-
   return section;
 }
 
 function createThemeSection(colorTokens, theme) {
   const themeName = theme.charAt(0).toUpperCase() + theme.slice(1);
-
   const contextualHTML = Object.entries(colorTokens)
     .map(([colorGroup, roles]) => {
       if (!roles || Object.keys(roles).length === 0) {
-        return `
-          <div class="contextual-group">
-            <h4 class="contextual-group__title">${colorGroup}</h4>
-            <p>No roles generated</p>
-          </div>
-        `;
+        return `<div class="contextual-group"><h4 class="contextual-group__title">${colorGroup}</h4><p>No roles generated</p></div>`;
       }
-
       const rolesHTML = Object.entries(roles)
         .map(([role, variations]) => {
           if (!variations || Object.keys(variations).length === 0) return "";
-
           const variationsHTML = Object.entries(variations)
             .map(([variation, data]) => {
               if (!data?.value) return "";
@@ -255,41 +230,18 @@ function createThemeSection(colorTokens, theme) {
               `;
             })
             .join("");
-
-          // Get display name from the first variation
           const firstVar = Object.values(variations)[0];
           const displayRoleName = firstVar?.role || role;
-
-          return variationsHTML
-            ? `
-              <div class="role-group">
-                <h5 class="role-group-dark__title">${displayRoleName}</h5>
-                <div class="variations-grid">${variationsHTML}</div>
-              </div>
-            `
-            : "";
+          return variationsHTML ? `<div class="role-group"><h5 class="role-group-dark__title">${displayRoleName}</h5><div class="variations-grid">${variationsHTML}</div></div>` : "";
         })
         .join("");
       let className = theme === "dark" ? "contextual-group-dark" : "contextual-group";
-
-      return rolesHTML
-        ? `
-          <div class="${className}">
-            <h4 class="${className}__title">${colorGroup.toUpperCase()}</h4>
-            ${rolesHTML}
-          </div>
-        `
-        : "";
+      return rolesHTML ? `<div class="${className}"><h4 class="${className}__title">${colorGroup.toUpperCase()}</h4>${rolesHTML}</div>` : "";
     })
     .join("");
-
   const section = document.createElement("div");
   section.className = `theme-section ${theme}-theme`;
-  section.innerHTML = `
-    <h4 class="raw-colors-section__title">${themeName} Theme - Contextual Tokens</h4>
-    ${contextualHTML}
-  `;
-
+  section.innerHTML = `<h4 class="raw-colors-section__title">${themeName} Theme - Contextual Tokens</h4>${contextualHTML}`;
   return section;
 }
 
@@ -297,46 +249,34 @@ function createThemeSection(colorTokens, theme) {
 function createColorInputs(colorScheme, onUpdate) {
   const targetContainer = document.getElementById("colorInputs");
   if (!targetContainer) return;
-
-  // Clear container
   targetContainer.innerHTML = "";
 
-  // ----- Basic Settings -----
   const basicSection = createSection("Basic Settings");
-
   basicSection.appendChild(createInput("name", "System Name", colorScheme.name));
   basicSection.appendChild(createInput("colorSteps", "Weight Count", colorScheme.colorSteps, "number"));
-  basicSection.appendChild(createInput("rampGenMode", "Ramp Generation Mode", colorScheme.rampGenMode || "Linear", "select", ["Linear", "Balanced"]));
-  // ----- Background Colors -----
+  basicSection.appendChild(createInput("rampType", "Ramp Generation Mode", colorScheme.rampType || "Balanced", "select", rampTypes));
+  basicSection.appendChild(createInput("roleMapping", "Role Mapping Method", colorScheme.roleMapping || "Contrast Based", "select", roleMappingMethods));
   basicSection.appendChild(createColorInput("modes.0.bg", "Light Theme Background", colorScheme.modes[0].bg || "FFFFFF"));
   basicSection.appendChild(createColorInput("modes.1.bg", "Dark Theme Background", colorScheme.modes[1].bg || "000000"));
   targetContainer.appendChild(basicSection);
-
-  // ----- Color Groups -----
   targetContainer.appendChild(createColorGroupsSection(colorScheme));
+  targetContainer.appendChild(createRolesSection(colorScheme, onUpdate));
 
-  // ----- Roles -----
-  targetContainer.appendChild(createRolesSection(colorScheme));
-
-  // ----- INPUT HANDLER (ONCE) -----
+  // Delegated listener registered once on the container; 350 ms debounce batches rapid input.
   if (!targetContainer.dataset.hasListener) {
     let updateTimeout;
-    targetContainer.addEventListener("input", (e) => {
+    ["input", "change"].forEach((evtType) => {
+      targetContainer.addEventListener(evtType, (e) => {
       const target = e.target;
       const path = target.dataset.path;
       if (!path) return;
-
       const pathParts = path.split(".");
       const rawVal = target.value;
       const type = target.type;
-
       if (updateTimeout) clearTimeout(updateTimeout);
-
       updateTimeout = setTimeout(() => {
         const activeScheme = window.currentEditableScheme;
         if (!activeScheme) return;
-
-        // Update the scheme
         if (type === "text" && target.classList.contains("color-text")) {
           const normalized = normalizeHex(rawVal);
           if (!normalized) return;
@@ -349,19 +289,33 @@ function createColorInputs(colorScheme, onUpdate) {
         } else {
           updateColorScheme(activeScheme, pathParts, rawVal);
         }
-
-        // Let the onUpdate callback handle rendering (it already does)
         if (typeof onUpdate === "function") onUpdate(activeScheme);
       }, 350);
+      });
     });
     targetContainer.dataset.hasListener = "true";
+  }
+
+  // Role mapping needs its own direct listener (not the delegated one) because switching modes
+  // rebuilds the entire sidebar HTML, which must happen before onUpdate re-renders tokens.
+  const roleMappingSelect = targetContainer.querySelector('[data-path="roleMapping"]');
+  if (roleMappingSelect) {
+    roleMappingSelect.removeEventListener("change", roleMappingSelect._handler);
+    const handler = (e) => {
+      const activeScheme = window.currentEditableScheme;
+      if (activeScheme) {
+        activeScheme.roleMapping = e.target.value;
+        createColorInputs(activeScheme, onUpdate);
+        if (typeof onUpdate === "function") onUpdate(activeScheme);
+      }
+    };
+    roleMappingSelect.addEventListener("change", handler);
+    roleMappingSelect._handler = handler;
   }
 }
 
 function createColorGroupsSection(colorScheme) {
   const colorsSection = createSection("Color Groups");
-
-  // Create add button
   const addButton = document.createElement("button");
   addButton.className = "add-color-group-btn";
   addButton.textContent = "+ Add";
@@ -372,7 +326,6 @@ function createColorGroupsSection(colorScheme) {
       value: "000000",
     };
     colorScheme.colors.push(newGroup);
-    // Recreate the entire controls section
     createColorInputs(colorScheme, (updated) => {
       window.currentEditableScheme = updated;
       const output = variableMaker(updated);
@@ -380,19 +333,15 @@ function createColorGroupsSection(colorScheme) {
     });
   });
   colorsSection.appendChild(addButton);
-
-  // Create existing color groups
   colorScheme.colors.forEach((group, index) => {
     colorsSection.appendChild(createColorGroupInput(group, index, colorScheme));
   });
-
   return colorsSection;
 }
 
 function createColorGroupInput(group, index, colorScheme) {
   const div = document.createElement("div");
   div.className = "color-group-control";
-
   div.innerHTML = `
     <div class="color-group-header">
       <input type="text" class="header-editable-input" value="${group.name}" data-path="colors.${index}.name" placeholder="Group Name">
@@ -410,36 +359,24 @@ function createColorGroupInput(group, index, colorScheme) {
       </div>
     </div>
   `;
-
   setupColorInputSync(div);
-
-  // Add delete button handler
   const deleteBtn = div.querySelector(".delete-group-btn");
   if (deleteBtn) {
     deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       const idx = parseInt(e.target.dataset.index);
-
-      // Remove the group from the color scheme
       colorScheme.colors.splice(idx, 1);
-
-      // Create a fresh copy to ensure reactivity
       const updatedScheme = JSON.parse(JSON.stringify(colorScheme));
       window.currentEditableScheme = updatedScheme;
-
-      // Recreate the entire controls section with updated scheme
       createColorInputs(updatedScheme, (newUpdatedScheme) => {
         window.currentEditableScheme = newUpdatedScheme;
         const output = variableMaker(newUpdatedScheme);
         displayColorTokens(output);
       });
-
-      // Immediately update the token display
       const output = variableMaker(updatedScheme);
       displayColorTokens(output);
     });
   }
-
   return div;
 }
 
@@ -460,13 +397,11 @@ function createColorInput(path, label, value) {
 function setupColorInputSync(container) {
   const colorPicker = container.querySelector(".color-picker");
   const colorText = container.querySelector(".color-text");
-
   if (colorPicker && colorText) {
     colorPicker.addEventListener("input", (e) => {
       const hexValue = e.target.value.replace("#", "");
       colorText.value = hexValue.toUpperCase();
     });
-
     colorText.addEventListener("input", (e) => {
       let hexValue = e.target.value.replace("#", "").toUpperCase();
       if (/^[0-9A-F]{6}$/.test(hexValue)) {
@@ -476,10 +411,8 @@ function setupColorInputSync(container) {
   }
 }
 
-function createRolesSection(colorScheme) {
+function createRolesSection(colorScheme, onUpdate) {
   const rolesSection = createSection("Roles Configuration");
-
-  // Create add button
   const addButton = document.createElement("button");
   addButton.className = "add-color-group-btn";
   addButton.textContent = "+ Add Role";
@@ -490,8 +423,8 @@ function createRolesSection(colorScheme) {
       shortName: "nr",
       minContrast: 4.5,
       spread: 2,
+      baseIndex: Math.floor(colorScheme.colorSteps / 2),
     };
-    // Recreate the entire controls section
     createColorInputs(colorScheme, (updated) => {
       window.currentEditableScheme = updated;
       const output = variableMaker(updated);
@@ -500,13 +433,14 @@ function createRolesSection(colorScheme) {
   });
   rolesSection.appendChild(addButton);
 
+  const isManualMode = colorScheme.roleMapping === "Manual Base Index";
+  const rampLength = colorScheme.colorSteps;
+
   for (const [roleKey, role] of Object.entries(colorScheme.roles)) {
     const roleDiv = document.createElement("div");
     const roleInputs = document.createElement("div");
-
     roleInputs.className = "color-group-control";
     roleDiv.classList.add("role-control-group");
-
     roleDiv.innerHTML = `
       <div class="role-control-header">
         <input type="text" class="header-editable-input" value="${role.name}" data-path="roles.${roleKey}.name" placeholder="Role Name">
@@ -514,81 +448,85 @@ function createRolesSection(colorScheme) {
       </div>
     `;
 
-    // Min contrast input
-    const minContrastInput = createInput(`roles.${roleKey}.minContrast`, "Min Contrast", role.minContrast, "number");
-    roleInputs.appendChild(minContrastInput);
-
-    // Spread input
+    // Spread input (common)
     const spreadInput = createInput(`roles.${roleKey}.spread`, "Spread", role.spread, "number");
     roleInputs.appendChild(spreadInput);
-
-    // Short name input
     const shortNameInput = createInput(`roles.${roleKey}.shortName`, "Short Name", role.shortName);
     roleInputs.appendChild(shortNameInput);
 
-    roleDiv.appendChild(roleInputs);
+    if (isManualMode) {
+      // Manual mode: Base Step (1‑based) – managed manually without data-path
+      const zeroBased = role.baseIndex !== undefined ? role.baseIndex : Math.floor(rampLength / 2);
+      const stepValue = zeroBased + 1;
+      const baseStepDiv = document.createElement("div");
+      baseStepDiv.className = "input-group";
+      baseStepDiv.innerHTML = `
+        <label class="input-group__label">Base Step (1-${rampLength})</label>
+        <input type="number" class="input-group__control" value="${stepValue}" min="1" max="${rampLength}">
+      `;
+      const stepInput = baseStepDiv.querySelector("input");
+      stepInput.addEventListener("change", (e) => {
+        let newStep = parseInt(e.target.value);
+        if (isNaN(newStep)) newStep = 1;
+        newStep = Math.min(rampLength, Math.max(1, newStep));
+        const newZeroBased = newStep - 1;
+        // Update the config
+        role.baseIndex = newZeroBased;
+        // Update the input's displayed value
+        e.target.value = newStep;
+        // Trigger re-render of tokens
+        if (typeof onUpdate === "function") onUpdate(colorScheme);
+      });
+      roleInputs.appendChild(baseStepDiv);
+    } else {
+      // Contrast mode: Min Contrast
+      const minContrastInput = createInput(`roles.${roleKey}.minContrast`, "Min Contrast", role.minContrast, "number");
+      roleInputs.appendChild(minContrastInput);
+    }
 
-    // Add delete button handler for roles
+    roleDiv.appendChild(roleInputs);
     const deleteBtn = roleDiv.querySelector(".delete-group-btn");
     if (deleteBtn) {
       deleteBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         const rKey = e.target.dataset.role;
-
-        // Remove the role from the color scheme
         delete colorScheme.roles[rKey];
-
-        // IMPORTANT: Create a fresh copy to ensure reactivity
         const updatedScheme = JSON.parse(JSON.stringify(colorScheme));
         window.currentEditableScheme = updatedScheme;
-
-        // Recreate the entire controls section with updated scheme
         createColorInputs(updatedScheme, (newUpdatedScheme) => {
           window.currentEditableScheme = newUpdatedScheme;
           const output = variableMaker(newUpdatedScheme);
           displayColorTokens(output);
         });
-
-        // Also immediately update the token display
         const output = variableMaker(updatedScheme);
         displayColorTokens(output);
       });
     }
-
     rolesSection.appendChild(roleDiv);
   }
-
   return rolesSection;
 }
 
 function createSection(title) {
   const section = document.createElement("div");
   section.className = "control-section";
-
   const header = document.createElement("div");
   header.className = "control-section__header";
-  header.innerHTML = `
-    <h4 class="control-section__title">${title}</h4>
-    <button class="section-toggle-btn">▼</button>
-  `;
-
+  header.innerHTML = `<h4 class="control-section__title">${title}</h4><button class="section-toggle-btn">▼</button>`;
   const content = document.createElement("div");
   content.className = "control-section__content";
-
   const inner = document.createElement("div");
   inner.className = "color-group-control";
   content.appendChild(inner);
-
   const toggleBtn = header.querySelector(".section-toggle-btn");
   header.addEventListener("click", () => {
     content.classList.toggle("hidden");
     toggleBtn.style.transform = content.classList.contains("hidden") ? "rotate(-90deg)" : "rotate(0deg)";
   });
-
   section.appendChild(header);
   section.appendChild(content);
-
-  // Hook appendChild to natively proxy children deep into the inner content shell safely
+  // Override appendChild so callers can treat the section like a flat container —
+  // child nodes are automatically routed into the collapsible inner div.
   const originalAppendChild = section.appendChild.bind(section);
   section.appendChild = function (node) {
     if (this.contains(content) && node !== header && node !== content) {
@@ -596,7 +534,6 @@ function createSection(title) {
     }
     return originalAppendChild(node);
   };
-
   return section;
 }
 
@@ -604,21 +541,13 @@ function createInput(path, label, value, type = "text", options = []) {
   const div = document.createElement("div");
   div.className = "input-group";
   if (type === "select") {
-    div.innerHTML = `
-    <label class="input-group__label">${label}</label>
-    <select class="input-group__control" data-path="${path}">
-      ${options.map((option) => `<option value="${option}" ${value === option ? "selected" : ""}>${option}</option>`).join("")}
-    </select>`;
+    div.innerHTML = `<label class="input-group__label">${label}</label><select class="input-group__control" data-path="${path}">${options.map((option) => `<option value="${option}" ${value === option ? "selected" : ""}>${option}</option>`).join("")}</select>`;
     return div;
   }
-  div.innerHTML = `
-  <label class="input-group__label">${label}</label>
-  <input type="${type}" class="input-group__control" value="${value}" data-path="${path}"/>
-  `;
+  div.innerHTML = `<label class="input-group__label">${label}</label><input type="${type}" class="input-group__control" value="${value}" data-path="${path}"/>`;
   return div;
 }
 
-// Set up global UI interactions
 document.addEventListener("DOMContentLoaded", () => {
   const toggleSidebarBtn = document.getElementById("toggleSidebarBtn");
   const appContainer = document.querySelector("app");
@@ -627,21 +556,15 @@ document.addEventListener("DOMContentLoaded", () => {
       appContainer.classList.toggle("sidebar-hidden");
     });
   }
-
-  // Global Click-to-Copy mechanism
   document.addEventListener("click", async (e) => {
     const copyTarget = e.target.closest("[data-copy]");
     if (!copyTarget) return;
-
     const value = copyTarget.getAttribute("data-copy");
     try {
       await navigator.clipboard.writeText(value);
-
-      // Temporary tooltip feedback
       const originalTooltip = copyTarget.getAttribute("data-tooltip");
       copyTarget.setAttribute("data-tooltip", "Copied!");
       copyTarget.classList.add("copy-success");
-
       setTimeout(() => {
         copyTarget.setAttribute("data-tooltip", originalTooltip);
         copyTarget.classList.remove("copy-success");
@@ -654,43 +577,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function updateColorScheme(colorScheme, pathParts, value) {
   if (!colorScheme || !pathParts || pathParts.length === 0) return;
-
-  // Handle nested properties
   let current = colorScheme;
-
-  // Navigate to the parent object
   for (let i = 0; i < pathParts.length - 1; i++) {
     const key = pathParts[i];
-
-    // Handle array indices (like "0", "1", etc.)
     if (Array.isArray(current) && !isNaN(parseInt(key))) {
       current = current[parseInt(key)];
-    }
-    // Handle object properties
-    else if (current && typeof current === "object") {
-      // Create the property if it doesn't exist
-      if (!(key in current)) {
-        current[key] = {};
-      }
+    } else if (current && typeof current === "object") {
+      if (!(key in current)) current[key] = {};
       current = current[key];
     } else {
       console.error(`Cannot navigate to ${key} in path ${pathParts.join(".")}`);
       return;
     }
   }
-
-  // Set the value on the final property
   const lastKey = pathParts[pathParts.length - 1];
-
-  // Handle array indices for the last key
   if (Array.isArray(current) && !isNaN(parseInt(lastKey))) {
     current[parseInt(lastKey)] = value;
-  }
-  // Handle object properties
-  else if (current && typeof current === "object") {
-    // Special handling for numeric values
+  } else if (current && typeof current === "object") {
     if (typeof value === "string" && !isNaN(parseFloat(value)) && isFinite(value)) {
-      // Keep as string for some fields, convert for others
       if (lastKey === "minContrast" || lastKey === "spread" || lastKey === "colorSteps") {
         current[lastKey] = parseFloat(value);
       } else {
@@ -700,17 +604,12 @@ function updateColorScheme(colorScheme, pathParts, value) {
       current[lastKey] = value;
     }
   }
-
-  // We let the caller handle the re-render to avoid redundant work
 }
 
-// CONFIG IMPORT/EXPORT FUNCTIONS
 function exportColorScheme(colorScheme) {
   const dataStr = JSON.stringify(colorScheme, null, 2);
   const dataUri = "data:application/json;charset=utf-8," + encodeURIComponent(dataStr);
-
   const exportFileDefaultName = `color-scheme-${colorScheme.name || "untitled"}-${new Date().toISOString().slice(0, 10)}.json`;
-
   const linkElement = document.createElement("a");
   linkElement.setAttribute("href", dataUri);
   linkElement.setAttribute("download", exportFileDefaultName);
@@ -720,35 +619,27 @@ function exportColorScheme(colorScheme) {
 function importColorScheme(event, onImportSuccess) {
   const file = event.target.files[0];
   if (!file) return;
-
   const reader = new FileReader();
   reader.onload = function (e) {
     try {
       const importedScheme = JSON.parse(e.target.result);
-
-      // Validate basic structure
       if (!importedScheme || !importedScheme.colors || !Array.isArray(importedScheme.colors) || !importedScheme.roles) {
         alert("Invalid color scheme file format");
         return;
       }
-
       onImportSuccess(importedScheme);
-
-      // Clear the file input
       event.target.value = "";
     } catch (error) {
       console.error("Error parsing color scheme:", error);
       alert("Error parsing color scheme file. Please check the format.");
     }
   };
-
   reader.readAsText(file);
 }
 
 function createMainBtnGroup() {
   const basicSettingsSection = document.querySelector("#mainActionBtns");
   if (!basicSettingsSection) return;
-
   basicSettingsSection.className = "import-export-controls btn-Group";
   basicSettingsSection.innerHTML = `
         <button id="exportCss" class="btn btn--primary">Export CSS</button>
@@ -759,80 +650,49 @@ function createMainBtnGroup() {
           <input type="file" id="importConfig" accept=".json" style="display: none" />
         </label>
   `;
-
-  // Set up event listeners
-  const exportBtn = basicSettingsSection.querySelector("#exportConfig");
   const importInput = basicSettingsSection.querySelector("#importConfig");
-
-  // Listeners are handled via event delegation in initializeColorControls
-
   if (importInput) {
     importInput.addEventListener("change", (e) => {
       importColorScheme(e, (importedScheme) => {
-        // Update the global colorScheme with imported data
         Object.assign(demoConfig, importedScheme);
-
-        // Update the current editable scheme
         window.currentEditableScheme = JSON.parse(JSON.stringify(demoConfig));
-
-        // Reinitialize the UI with imported scheme
         initializeColorControls();
       });
     });
   }
 }
 
-// INITIALIZATION
 function initializeColorControls() {
-  // Always work on a deep copy so UI changes do not mutate the original
   const editable = JSON.parse(JSON.stringify(demoConfig));
-  window.currentEditableScheme = editable; // Set global variable
-
-  // Build all UI inputs + wire input handlers
+  window.currentEditableScheme = editable;
   createColorInputs(editable, (updatedScheme) => {
     window.currentEditableScheme = updatedScheme;
     const output = variableMaker(updatedScheme);
     displayColorTokens(output);
   });
-
-  // Add import/export controls
   setTimeout(() => {
     createMainBtnGroup();
   }, 50);
-
-  // Render initial output
   const initialOutput = variableMaker(editable);
   displayColorTokens(initialOutput);
-
-  // Event delegation for all buttons (Added once)
   if (!window.globalListenersSet) {
     document.addEventListener("click", (e) => {
       const targetId = e.target.id;
-
       if (targetId === "exportCss") {
-        downloadCss(); // This function is in DocGen.js
+        downloadCss();
       }
-
       if (targetId === "exportConfig") {
         exportColorScheme(window.currentEditableScheme || demoConfig);
       }
-
       if (targetId === "downloadCsv") {
-        // Use current editable scheme for CSV export
         const currentScheme = window.currentEditableScheme || editable;
         const dataForCsv = variableMaker(currentScheme);
-
-        console.log("Data being passed to flattenTokensForCsv:", dataForCsv);
-
         const flat = flattenTokensForCsv(dataForCsv);
-        console.log("Flattened CSV data:", flat);
-
         if (flat.length === 0) {
           console.warn("No data found for CSV export");
           alert("No color token data found to export. Please check if the color system is properly configured.");
           return;
         }
-
         const columns = [
           { label: "Theme", path: "theme" },
           { label: "Group", path: "group" },
@@ -845,12 +705,7 @@ function initializeColorControls() {
           { label: "Rating", path: "contrastRating" },
           { label: "Adjusted", path: "isAdjusted" },
         ];
-
-        const csv = generateCSV({
-          data: flat,
-          columns: columns,
-        });
-
+        const csv = generateCSV({ data: flat, columns: columns });
         downloadCSV("tokens.csv", csv);
       }
     });
@@ -858,7 +713,6 @@ function initializeColorControls() {
   }
 }
 
-// Export for module use if needed
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     displayColorTokens,

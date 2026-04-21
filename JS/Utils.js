@@ -1,3 +1,5 @@
+// Utils.js - Core color conversion and WCAG contrast utilities.
+// All functions are pure and stateless; safe to call from any module.
 function validHex(hex) {
   if (typeof hex !== "string") return false;
   return /^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(hex.trim());
@@ -106,6 +108,7 @@ function hslToHex(h, s, l) {
   return rgbToHex(...rgb);
 }
 
+// Relative luminance per WCAG 2.1 spec — gamma correction then weighted channel sum.
 function relLum(hex) {
   const rgb = hexToRgb(hex);
   if (!rgb) return null;
@@ -129,6 +132,7 @@ function contrastRatio(hex1, hex2) {
   return Number(((high + 0.05) / (low + 0.05)).toFixed(2));
 }
 
+// WCAG 2.1 thresholds: <3 Fail, 3–4.5 AA Large (18pt+), 4.5–7 AA, ≥7 AAA.
 function contrastRating(hex1, hex2) {
   const ratio = contrastRatio(hex1, hex2);
   if (ratio === null) return null;
@@ -144,144 +148,6 @@ function seriesMaker(x) {
   return out;
 }
 
-function colorRampMaker(hexIn, rampLength, rampType = "linear") {
-  const hue = hexToHue(hexIn);
-  const satu = hexToSat(hexIn);
-  const output = [];
-
-  if (rampType == "Balanced") {
-    // To match the contrast calculator (CR = (Y1 + 0.05)/(Y2 + 0.05)),
-    // we must linearly space the logarithmic values of (Y + 0.05).
-    // This guarantees an identical contrast ratio between every adjacent shade!
-    const minL = 0; // Absolute black
-    const maxL = 1; // Absolute white
-    const minV = Math.log(minL + 0.05);
-    const maxV = Math.log(maxL + 0.05);
-    const step = (maxV - minV) / (rampLength + 1);
-
-    const output = [];
-
-    for (let i = 1; i <= rampLength; i++) {
-      // Calculate the target perceived luminance mathematically using the contrast scale
-      const targetV = minV + step * i;
-      const targetLum = Math.exp(targetV) - 0.05;
-
-      // Binary search for the L value that achieves the target luminance for our specific hue and saturation
-      let low = 0;
-      let high = 100;
-      let closestL = 50;
-
-      for (let j = 0; j < 30; j++) {
-        let mid = (low + high) / 2;
-        let midHex = hslToHex(hue, satu, mid);
-        let midLum = relLum(midHex);
-
-        closestL = mid;
-
-        // Stop early if target luminance matches
-        if (Math.abs(midLum - targetLum) < 0.0001) {
-          break;
-        }
-
-        if (midLum < targetLum) {
-          low = mid;
-        } else {
-          high = mid;
-        }
-      }
-
-      // Map optimal L back to precise color hex
-      output.push(hslToHex(hue, satu, closestL) || "#000000");
-    }
-  }
-  if (rampType == "Symmetric") {
-    // To match the contrast calculator (CR = (Y1 + 0.05)/(Y2 + 0.05)),
-    // we must linearly space the logarithmic values of (Y + 0.05).
-    // This guarantees an identical contrast ratio between every adjacent shade!
-    const minL = 0; // Absolute black
-    const maxL = 1; // Absolute white
-    const minV = Math.log(minL + 0.05);
-    const maxV = Math.log(maxL + 0.05);
-    const step = (maxV - minV) / (rampLength + 1);
-
-    for (let i = 1; i <= rampLength; i++) {
-      // Calculate the target perceived luminance mathematically using the contrast scale
-      const targetV = minV + step * i;
-      const targetLum = Math.exp(targetV) - 0.05;
-
-      // Binary search for the L value that achieves the target luminance for our specific hue and saturation
-      let low = 0;
-      let high = 100;
-      let closestL = 50;
-
-      for (let j = 0; j < 30; j++) {
-        let mid = (low + high) / 2;
-        let midHex = hslToHex(hue, satu, mid);
-        let midLum = relLum(midHex);
-
-        closestL = mid;
-
-        // Stop early if target luminance matches
-        if (Math.abs(midLum - targetLum) < 0.0001) {
-          break;
-        }
-
-        if (midLum < targetLum) {
-          low = mid;
-        } else {
-          high = mid;
-        }
-      }
-
-      // Map optimal L back to precise color hex
-      output.push(hslToHex(hue, satu, closestL) || "#000000");
-    }
-  }
-  if (rampType == "Linear") {
-    // To match the contrast calculator (CR = (Y1 + 0.05)/(Y2 + 0.05)),
-    // we must linearly space the logarithmic values of (Y + 0.05).
-    // This guarantees an identical contrast ratio between every adjacent shade!
-    const minL = 0; // Absolute black
-    const maxL = 1; // Absolute white
-    const minV = Math.log(minL + 0.05);
-    const maxV = Math.log(maxL + 0.05);
-    const step = (maxV - minV) / (rampLength + 1);
-
-    for (let i = 1; i <= rampLength; i++) {
-      // Calculate the target perceived luminance mathematically using the contrast scale
-      const targetV = minV + step * i;
-      const targetLum = Math.exp(targetV) - 0.05;
-
-      // Binary search for the L value that achieves the target luminance for our specific hue and saturation
-      let low = 0;
-      let high = 100;
-      let closestL = 50;
-
-      for (let j = 0; j < 30; j++) {
-        let mid = (low + high) / 2;
-        let midHex = hslToHex(hue, satu, mid);
-        let midLum = relLum(midHex);
-
-        closestL = mid;
-
-        // Stop early if target luminance matches
-        if (Math.abs(midLum - targetLum) < 0.0001) {
-          break;
-        }
-
-        if (midLum < targetLum) {
-          low = mid;
-        } else {
-          high = mid;
-        }
-      }
-
-      // Map optimal L back to precise color hex
-      output.push(hslToHex(hue, satu, closestL) || "#000000");
-    }
-  }
-  return output.reverse();
-}
 function slugify(str) {
   if (!str) return "";
   return str
@@ -290,4 +156,22 @@ function slugify(str) {
     .replace(/[^\w\s-]/g, "")
     .replace(/[\s_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    normalizeHex,
+    hexToRgb,
+    rgbToHsl,
+    hslToRgb,
+    relLum,
+    contrastRatio,
+    contrastRating,
+    hslToHex,
+    hexToHue,
+    hexToSat,
+    hexToLum,
+    slugify,
+    seriesMaker,
+  };
 }
